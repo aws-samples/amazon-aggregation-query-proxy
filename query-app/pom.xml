@@ -13,7 +13,7 @@
         <dropwizard.version>2.0.29</dropwizard.version>
         <kotlin.version>1.4.20</kotlin.version>
         <partiql.version>0.2.6</partiql.version>
-        <jackson.version>2.13.0</jackson.version>
+        <jackson.version>2.13.2.1</jackson.version>
         <awssdk.version>2.17.91</awssdk.version>
         <glassfish.version>1.1.4</glassfish.version>
         <dropwizard-health.version>1.7.1</dropwizard-health.version>
