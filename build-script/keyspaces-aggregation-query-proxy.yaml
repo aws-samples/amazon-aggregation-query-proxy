@@ -1,0 +1,6 @@
+serviceName: KEYSPACES
+#pathToKeyspacesConfigFile: /usr/app
+pathToKeyspacesConfigFile: build-script/
+awsRegion: us-east-1
+localDDB: false
+clientSecret: secretEXAMPLE

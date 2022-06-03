@@ -1,0 +1,5 @@
+serviceName: KEYSPACES
+pathToKeyspacesConfigFile: /path/to/keyspaces/conf
+awsRegion: us-east-1
+localDDB: false
+clientSecret: secretEXAMPLE

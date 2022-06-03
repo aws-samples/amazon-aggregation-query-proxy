@@ -1,0 +1,6 @@
+serviceName: KEYSPACES
+#pathToKeyspacesConfigFile: /usr/app
+pathToKeyspacesConfigFile: query-app/conf
+awsRegion: us-east-1
+localDDB: false
+clientSecret: secretEXAMPLE

@@ -1,0 +1,5 @@
+serviceName: DYNAMODB
+pathToKeyspacesConfigFile: /usr/app
+awsRegion: us-east-1
+localDDB: true
+clientSecret: secretEXAMPLE
