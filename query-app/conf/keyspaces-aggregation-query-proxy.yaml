@@ -1,4 +1,4 @@
-serviceName: KEYSPACES
+serviceName: DYNAMODB
 #pathToKeyspacesConfigFile: /usr/app
 pathToKeyspacesConfigFile: query-app/conf
 awsRegion: us-east-1

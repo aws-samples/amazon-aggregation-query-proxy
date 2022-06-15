@@ -53,7 +53,7 @@ Set ```dynamoRegion``` to  ```us-east-1```
 ### Start a docker container with the app
 ```docker run -it -p 8080:8080 --env AWS_REGION="us-east-1" --env AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID --env AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY --env AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN simple-aggregation-query-app```
 
-### Let's execute a query
+### Let's execute a simple aggregation query against Amazon Keyspaces
 
 `AUTH_BASIC=$(echo -n large-query-app:your_secret | base64)`
 
@@ -76,6 +76,43 @@ Set ```dynamoRegion``` to  ```us-east-1```
         "elapsedTimeToAggregateDataInMs": 361,
         "elapsedTimeToRetrieveDataInMs": 120,
         "payloadSizeBytes": 626
+    }
+}
+```
+
+### Let's execute a simple aggregation query against Amazon DynamoDB
+
+`http --auth-type basic -a large-query-app:secretEXAMPLE --follow --timeout 3600 GET 'http://0.0.0.0:8080/query-aggregation/select zipcode,pk,sum(amount) as total from "your_table" where pk in (%27ACCOUNT%23ACCOUNT40%23CUSTOMER%23CUSTOMER33%27, %27ACCOUNT%23ACCOUNT1%23CUSTOMER%23CUSTOMER61%27) group by zipcode, pk'`
+
+`HTTP/1.1 200 OK`
+`Cache-Control: no-transform, max-age=60`
+`Content-Encoding: gzip`
+`Content-Length: 229`
+`Content-Type: application/json`
+`Date: Tue, 14 Jun 2022 14:57:15 GMT`
+`Vary: Accept-Encoding`
+```json
+{
+    "response": [
+        {
+            "resultSet": [
+                {
+                    "pk": "ACCOUNT#ACCOUNT1#CUSTOMER#CUSTOMER61",
+                    "total": 133.9894140356888,
+                    "zipcode": 74545
+                },
+                {
+                    "pk": "ACCOUNT#ACCOUNT40#CUSTOMER#CUSTOMER33",
+                    "total": 4321.055836431855,
+                    "zipcode": 56624
+                }
+            ]
+        }
+    ],
+    "stats": {
+        "elapsedTimeToAggregateDataInMs": 1210,
+        "elapsedTimeToRetrieveDataInMs": 1346,
+        "payloadSizeBytes": 194
     }
 }
 ```

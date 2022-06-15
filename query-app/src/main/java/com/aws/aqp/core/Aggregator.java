@@ -5,6 +5,7 @@ package com.aws.aqp.core;
 
 import com.aws.aqp.connectors.Extractor;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Stopwatch;
 
@@ -22,19 +23,24 @@ public class Aggregator {
 
      public String aggregate(String query) throws JsonProcessingException, InterruptedException {
          QueryTransformer queryTransformer = new QueryTransformer();
-
          Stopwatch stopwatchPlainRequest = Stopwatch.createStarted();
+
          var plainResult = extractor.execute(queryTransformer.getPlainQuery(query).left);
          stopwatchPlainRequest.stop();
+
          long plainResultElapsedTime = stopwatchPlainRequest.elapsed(TimeUnit.MILLISECONDS);
          Stopwatch stopwatchAggRequest = Stopwatch.createStarted();
+
          var aggregatedResult = queryTransformer.getAggregationQuery(queryTransformer.getPlainQuery(query).right, plainResult);
          stopwatchAggRequest.stop();
+
+         JsonNode jsonNodeResponse = objectMapper.readTree(aggregatedResult.replace("_1", "resultSet"));
+
          long aggregatedResultElapsedTime = stopwatchAggRequest.elapsed(TimeUnit.MILLISECONDS);
 
          com.aws.aqp.core.Response response = new com.aws.aqp.core.Response(
                  new Stats(plainResultElapsedTime, aggregatedResultElapsedTime, plainResult.getBytes().length),
-                 aggregatedResult);
+                 jsonNodeResponse);
 
          return objectMapper.writeValueAsString(response);
      }

@@ -59,8 +59,7 @@ public class IonEngine {
             selectAndFilterResult.getIonValue().writeTo(resultWriter);
             return byteArrayOutputStream.toString();
         } catch (IOException e) {
-            System.err.printf("Unable to transform %s%n", e);
+            throw new RuntimeException(e);
         }
-        return sql;
     }
 }

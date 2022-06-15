@@ -21,6 +21,7 @@
         <dropwizard-auth.version>2.0.29</dropwizard-auth.version>
         <okta.version>0.3.0</okta.version>
         <unirest.version>3.13.6</unirest.version>
+        <commons-text.version>1.9</commons-text.version>
     </properties>
     <build>
         <plugins>
@@ -204,6 +205,11 @@
             <version>${unirest.version}</version>
             <classifier>standalone</classifier>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-text</artifactId>
+            <version>${commons-text.version}</version>
         </dependency>
         <dependency>
             <groupId>groupId</groupId>

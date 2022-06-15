@@ -9,6 +9,7 @@ import com.aws.aqp.core.Aggregator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.dropwizard.auth.Auth;
 import io.dropwizard.jersey.caching.CacheControl;
+import org.apache.commons.text.StringEscapeUtils;
 
 import javax.annotation.security.PermitAll;
 import javax.ws.rs.GET;
@@ -22,8 +23,8 @@ import java.util.concurrent.TimeUnit;
 @Path("/query-aggregation")
 @Produces(MediaType.APPLICATION_JSON)
 public class QueryRESTController {
-    private Extractor extractor;
     private final static int MAX_AGED_CACHE = 1;
+    private Extractor extractor;
 
     public QueryRESTController(Extractor extractor) {
         this.extractor = extractor;
@@ -38,6 +39,6 @@ public class QueryRESTController {
         Aggregator aggregator = new Aggregator(extractor);
         String result = aggregator.aggregate(query);
 
-        return Response.ok(result).build();
+        return Response.ok(StringEscapeUtils.unescapeJson(result)).build();
     }
 }

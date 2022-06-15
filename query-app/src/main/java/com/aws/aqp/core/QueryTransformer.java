@@ -96,7 +96,6 @@ public class QueryTransformer {
                 finalQuery = query.replace(termIn, "");
             }
         }
-        System.out.println(finalQuery);
         String[] arr = finalQuery.split("WHERE", Pattern.CASE_INSENSITIVE);
         List<String> list = new ArrayList<>();
         StringTokenizer stringTokenizer = new StringTokenizer(arr[0], ",");

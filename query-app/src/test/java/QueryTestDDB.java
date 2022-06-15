@@ -52,8 +52,7 @@ class QueryTestDDB {
 
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(response.getBody());
-        JsonNode actualObj1 = mapper.readTree(actualObj.get("response").asText());
-        assert (actualObj1.get(0).get("resultSet").get(0).get("CNT").asInt() == 4);
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("CNT").asInt() == 4);
     }
 
     @Test
@@ -64,8 +63,7 @@ class QueryTestDDB {
 
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(response.getBody());
-        JsonNode actualObj1 = mapper.readTree(actualObj.get("response").asText());
-        assert (actualObj1.get(0).get("resultSet").get(0).get("CNT").asInt() == 4);
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("CNT").asInt() == 4);
     }
 
     @Test
@@ -76,9 +74,8 @@ class QueryTestDDB {
 
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(response.getBody());
-        JsonNode actualObj1 = mapper.readTree(actualObj.get("response").asText());
-        assert (actualObj1.get(0).get("resultSet").get(0).get("cnt").asInt() == 10);
-        assert (actualObj1.get(0).get("resultSet").get(0).get("type").asText().equals("test"));
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("cnt").asInt() == 10);
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("type").asText().equals("test"));
     }
 
     @Test
@@ -89,8 +86,7 @@ class QueryTestDDB {
 
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(response.getBody());
-        JsonNode actualObj1 = mapper.readTree(actualObj.get("response").asText());
-        assert (actualObj1.get(0).get("resultSet").get(0).get("CNT").asInt() == 1);
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("CNT").asInt() == 1);
     }
 
     @Test
@@ -101,7 +97,6 @@ class QueryTestDDB {
 
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(response.getBody());
-        JsonNode actualObj1 = mapper.readTree(actualObj.get("response").asText());
-        assert (actualObj1.get(0).get("resultSet").get(0).get("CNT").asInt() == 3);
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("CNT").asInt() == 3);
     }
 }
