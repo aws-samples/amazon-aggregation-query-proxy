@@ -9,10 +9,10 @@
     <version>1.0-SNAPSHOT</version>
     <properties>
         <picocli.version>4.6.1</picocli.version>
-        <datastax.version>4.13.0</datastax.version>
+        <datastax.version>4.14.0</datastax.version>
         <dropwizard.version>2.0.29</dropwizard.version>
-        <kotlin.version>1.4.20</kotlin.version>
-        <partiql.version>0.2.6</partiql.version>
+        <kotlin.version>1.7.0</kotlin.version>
+        <partiql.version>0.7.0</partiql.version>
         <jackson.version>[2.13.2.1,)</jackson.version>
         <awssdk.version>2.17.91</awssdk.version>
         <glassfish.version>1.1.4</glassfish.version>
