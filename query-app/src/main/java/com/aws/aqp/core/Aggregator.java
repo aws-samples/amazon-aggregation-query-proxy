@@ -15,22 +15,25 @@ public class Aggregator {
 
     private Extractor extractor;
     private ObjectMapper objectMapper;
+    private static QueryTransformer queryTransformer = new QueryTransformer();
 
-    public Aggregator(Extractor extractor ) {
+    public Aggregator(Extractor extractor) {
         this.extractor = extractor;
         this.objectMapper = new ObjectMapper();
     }
 
-     public String aggregate(String query) throws JsonProcessingException, InterruptedException {
-         QueryTransformer queryTransformer = new QueryTransformer();
-         Stopwatch stopwatchPlainRequest = Stopwatch.createStarted();
+    public String getPlainQuery(String query) {
+        return queryTransformer.getPlainQuery(query).left;
+    }
 
-         var plainResult = extractor.execute(queryTransformer.getPlainQuery(query).left);
+     public String aggregate(String query) throws JsonProcessingException, InterruptedException {
+
+         Stopwatch stopwatchPlainRequest = Stopwatch.createStarted();
+         var plainResult = extractor.execute(getPlainQuery(query));
          stopwatchPlainRequest.stop();
 
          long plainResultElapsedTime = stopwatchPlainRequest.elapsed(TimeUnit.MILLISECONDS);
          Stopwatch stopwatchAggRequest = Stopwatch.createStarted();
-
          var aggregatedResult = queryTransformer.getAggregationQuery(queryTransformer.getPlainQuery(query).right, plainResult);
          stopwatchAggRequest.stop();
 

@@ -1,6 +1,38 @@
-serviceName: DYNAMODB
+serviceName: KEYSPACES
 #pathToKeyspacesConfigFile: /usr/app
 pathToKeyspacesConfigFile: query-app/conf
 awsRegion: us-east-1
 localDDB: false
 clientSecret: secretEXAMPLE
+server:
+  #  softNofileLimit: 1000
+  #  hardNofileLimit: 1000
+  applicationConnectors:
+    - type: http
+      port: 8080
+
+    #this requires the alpn-boot library on the JVM's boot classpath
+    #- type: h2
+    #  port: 8445
+    #  keyStorePath: example.keystore
+    #  keyStorePassword: example
+  adminConnectors:
+    - type: http
+      port: 8081
+
+# Logging settings.
+logging:
+
+  # The default level of all loggers. Can be OFF, ERROR, WARN, INFO, DEBUG, TRACE, or ALL.
+  level: INFO
+  loggers:
+    "com.aws.aqp.connectors.CassandraExtractor":
+      level: DEBUG
+      additive: false
+      appenders:
+        - type: console
+    "com.aws.aqp.api.QueryRESTController":
+      level: DEBUG
+      additive: false
+      appenders:
+        - type: console

@@ -6,9 +6,13 @@ package com.aws.aqp.connectors;
 import com.aws.aqp.application.AppConfiguration;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
-import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.UUID;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -18,9 +22,10 @@ public class CassandraExtractor extends Extractor {
 
     private final ConnectionKeyspacesFactory connectionKeyspacesFactory;
     private CqlSession cqlSession;
-    private Set<String> dbGenericResult = new ConcurrentSkipListSet<>();
+    private ConcurrentMap<String, String> dbGenericResult = new ConcurrentHashMap<>(10000, 0.7f, 4);
     private CountDownLatch countDownLatch;
-    private static long TIMEOUT = 360;
+    private static final long TIMEOUT = 360;
+    private static final Logger LOGGER = LoggerFactory.getLogger(CassandraExtractor.class);
 
     public CassandraExtractor(AppConfiguration appConfiguration) {
         connectionKeyspacesFactory = new ConnectionKeyspacesFactory(appConfiguration);
@@ -29,14 +34,13 @@ public class CassandraExtractor extends Extractor {
 
     void processPagesAsync(AsyncResultSet rs, Throwable error) {
         if (error != null) {
+            LOGGER.error(error.getMessage());
             throw new RuntimeException(error);
         } else {
             rs.currentPage().forEach(row ->
-                    dbGenericResult.add((row.getString(0))));
+                    dbGenericResult.put(UUID.randomUUID().toString(), (row.getString(0))));
             if (rs.hasMorePages()) {
-                rs.fetchNextPage().whenComplete((thisRs, thisError) -> {
-                    processPagesAsync(thisRs, thisError);
-                });
+                rs.fetchNextPage().whenComplete((thisRs, thisError) -> processPagesAsync(thisRs, thisError));
             } else {
                 //Completed to read pages
                 countDownLatch.countDown();
@@ -52,11 +56,10 @@ public class CassandraExtractor extends Extractor {
         CompletionStage<AsyncResultSet> futureRs =
                 cqlSession.executeAsync(query);
         futureRs.whenComplete(this::processPagesAsync);
-
         countDownLatch.await(TIMEOUT, TimeUnit.SECONDS);
 
         return String.format("{\"resultSet\":[%s]}",
-                dbGenericResult.parallelStream().collect(Collectors.joining(",")));
+                dbGenericResult.values().parallelStream().collect(Collectors.joining(",")));
     }
 
     @Override

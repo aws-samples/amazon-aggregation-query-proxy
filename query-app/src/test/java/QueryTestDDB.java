@@ -21,7 +21,7 @@ import java.util.Base64;
 @ExtendWith(DropwizardExtensionsSupport.class)
 class QueryTestDDB {
 
-    private static DropwizardAppExtension<AppConfiguration> EXT = new DropwizardAppExtension<AppConfiguration>(
+    private static DropwizardAppExtension<AppConfiguration> EXT = new DropwizardAppExtension<>(
             App.class,
             ResourceHelpers.resourceFilePath("keyspaces-aggregation-query-proxy.yaml"));
 
@@ -98,5 +98,17 @@ class QueryTestDDB {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(response.getBody());
         assert (actualObj.get("response").get(0).get("resultSet").get(0).get("CNT").asInt() == 3);
+    }
+
+    @Test
+    void selectCountGroupByAndOtherColumns() throws JsonProcessingException {
+        HttpResponse<String> response = Unirest.get(String.format("http://localhost:%d/query-aggregation/%s", EXT.getLocalPort(), "select type, count(pk) as CNT from testTable where pk in ('Record1','Record2','Record3','Record4') group by type"))
+                .header("Authorization", String.format("Basic %s", encoding))
+                .asString();
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode actualObj = mapper.readTree(response.getBody());
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("CNT").asInt() == 4);
+        assert (actualObj.get("response").get(0).get("resultSet").get(0).get("type").asText().equals("test"));
     }
 }
