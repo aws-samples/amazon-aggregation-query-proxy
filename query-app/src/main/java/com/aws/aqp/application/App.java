@@ -43,13 +43,17 @@ public class App extends Application<AppConfiguration> {
 
         if (appConfiguration.getServiceName().equals(DatabaseType.KEYSPACES.toString())) {
             environment.healthChecks().register("keyspaces-tcp-dependency", new ConnectionHealthCheck(appConfiguration));
-            extractor = new CassandraExtractor(appConfiguration);
+            if (environment.healthChecks().runHealthCheck("keyspaces-tcp-dependency").isHealthy()) {
+                extractor = new CassandraExtractor(appConfiguration);
+            }
         }
         if (appConfiguration.getServiceName().equals(DatabaseType.DYNAMODB.toString())) {
             String ddbEndpoint = System.getProperty("dynamodb-endpoint",String.format("https://dynamodb.%s.amazonaws.com", appConfiguration.getAwsRegion().toLowerCase()));
             environment.healthChecks().register("ddb-http-dependency",
                     new HttpHealthCheck(ddbEndpoint));
-            extractor = new DynamodbExtractor(appConfiguration);
+            if (environment.healthChecks().runHealthCheck("dynamodb-endpoint").isHealthy()) {
+                extractor = new DynamodbExtractor(appConfiguration);
+            }
         }
 
         environment.jersey().register(new AuthDynamicFeature(new BasicCredentialAuthFilter.Builder<AqpUser>()

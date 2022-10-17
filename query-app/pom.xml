@@ -3,12 +3,12 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <groupId>groupId</groupId>
     <artifactId>query-app</artifactId>
     <version>1.0-SNAPSHOT</version>
     <properties>
-        <picocli.version>4.6.1</picocli.version>
-        <datastax.version>4.14.0</datastax.version>
+        <datastax.version>4.15.0</datastax.version>
         <dropwizard.version>2.0.29</dropwizard.version>
         <kotlin.version>1.7.0</kotlin.version>
         <partiql.version>0.7.0</partiql.version>
@@ -19,7 +19,7 @@
         <dropwizard-auth.version>2.0.29</dropwizard-auth.version>
         <okta.version>0.3.0</okta.version>
         <unirest.version>3.13.6</unirest.version>
-        <commons-text.version>1.9</commons-text.version>
+        <commons-text.version>1.10.0</commons-text.version>
     </properties>
     <build>
         <plugins>
@@ -153,6 +153,11 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
             <version>${jackson.version}</version>
         </dependency>
         <dependency>

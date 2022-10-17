@@ -26,7 +26,6 @@ public class ConnectionKeyspacesFactory {
 
     public ConnectionKeyspacesFactory(AppConfiguration appConfiguration) {
         this.appConfiguration = appConfiguration;
-
     }
 
     public CqlSession buildSession() {
