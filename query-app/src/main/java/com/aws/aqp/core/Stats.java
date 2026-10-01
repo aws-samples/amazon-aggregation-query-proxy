@@ -3,6 +3,7 @@
 
 package com.aws.aqp.core;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 
 public class Stats {
@@ -10,13 +11,21 @@ public class Stats {
     private long elapsedTimeToRetrieveDataInMs;
     private long elapsedTimeToAggregateDataInMs;
     private long payloadSizeBytes;
+    private long rowsRetrieved;
+    /** DynamoDB only; omitted from the response when the store does not report it. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Double consumedReadCapacityUnits;
 
     public Stats(long elapsedTimeToRetrieveDataInMs,
                  long elapsedTimeToAggregateInMs,
-                 long payloadSizeBytes) {
+                 long payloadSizeBytes,
+                 long rowsRetrieved,
+                 Double consumedReadCapacityUnits) {
         this.elapsedTimeToAggregateDataInMs = elapsedTimeToAggregateInMs;
         this.elapsedTimeToRetrieveDataInMs = elapsedTimeToRetrieveDataInMs;
         this.payloadSizeBytes = payloadSizeBytes;
+        this.rowsRetrieved = rowsRetrieved;
+        this.consumedReadCapacityUnits = consumedReadCapacityUnits;
     }
 
     public long getElapsedTimeToRetrieveDataInMs() {
@@ -41,6 +50,22 @@ public class Stats {
 
     public void setPayloadSizeBytes(long payloadSizeBytes) {
         this.payloadSizeBytes = payloadSizeBytes;
+    }
+
+    public long getRowsRetrieved() {
+        return rowsRetrieved;
+    }
+
+    public void setRowsRetrieved(long rowsRetrieved) {
+        this.rowsRetrieved = rowsRetrieved;
+    }
+
+    public Double getConsumedReadCapacityUnits() {
+        return consumedReadCapacityUnits;
+    }
+
+    public void setConsumedReadCapacityUnits(Double consumedReadCapacityUnits) {
+        this.consumedReadCapacityUnits = consumedReadCapacityUnits;
     }
 
     @Override

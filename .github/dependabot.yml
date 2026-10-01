@@ -1,0 +1,22 @@
+# Weekly update PRs for every pinned version: Maven dependencies and plugins, Docker base
+# images (tag and digest together), and the digest-pinned GitHub Actions. CI runs on each PR.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR per coordinated stack instead of a dozen that must land together.
+      dropwizard:
+        patterns: ["io.dropwizard*"]
+      aws-sdk:
+        patterns: ["software.amazon.awssdk*"]
+  - package-ecosystem: docker
+    directory: /build-script
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

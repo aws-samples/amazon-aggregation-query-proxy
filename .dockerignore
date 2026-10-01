@@ -1,0 +1,8 @@
+# Keep the build context small and free of local state.
+.git
+**/target
+**/.idea
+**/*.iml
+**/.DS_Store
+build-script/*.jar
+**/build.log

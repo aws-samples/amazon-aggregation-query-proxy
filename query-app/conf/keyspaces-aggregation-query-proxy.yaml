@@ -1,38 +1,47 @@
-serviceName: KEYSPACES
-#pathToKeyspacesConfigFile: /usr/app
-pathToKeyspacesConfigFile: query-app/conf
-awsRegion: us-east-1
+# Aggregation Query Proxy configuration.
+#
+# Contains no secrets: dollar-brace placeholders below are read from the environment at startup,
+# and startup fails if a referenced variable is not set (":-" introduces a default).
+#
+# Do not write a dollar-brace placeholder in a comment: substitution runs over the whole file,
+# comments included, so an unset one fails startup.
+
+# KEYSPACES or DYNAMODB
+serviceName: ${AQP_SERVICE_NAME:-KEYSPACES}
+# Directory containing KeyspacesConnector.conf (Keyspaces only). /usr/app in the container.
+pathToKeyspacesConfigFile: ${AQP_KEYSPACES_CONFIG_DIR:-/usr/app}
+awsRegion: ${AWS_REGION:-us-east-1}
 localDDB: false
-clientSecret: secretEXAMPLE
+
+# Push-down result budget; see "Limitations" in the README.
+maxRows: 100000
+maxResultBytes: 67108864
+
+# One entry per API client, each with its own secret (16+ characters) and roles.
+users:
+  reporting-app:
+    secret: ${AQP_REPORTING_APP_SECRET}
+    roles: [SMALL_QUERY]
+
 server:
-  #  softNofileLimit: 1000
-  #  hardNofileLimit: 1000
   applicationConnectors:
     - type: http
       port: 8080
-
-    #this requires the alpn-boot library on the JVM's boot classpath
-    #- type: h2
-    #  port: 8445
-    #  keyStorePath: example.keystore
-    #  keyStorePassword: example
+  # The admin port serves health checks, metrics, thread dumps and tasks such as changing log
+  # levels, with no authentication. Bound to loopback so it is reachable only from inside the
+  # host or container (the Docker HEALTHCHECK uses it). It previously listened on all interfaces.
   adminConnectors:
     - type: http
+      bindHost: 127.0.0.1
       port: 8081
 
-# Logging settings.
 logging:
-
-  # The default level of all loggers. Can be OFF, ERROR, WARN, INFO, DEBUG, TRACE, or ALL.
+  # OFF, ERROR, WARN, INFO, DEBUG, TRACE or ALL. At DEBUG the extractors log each push-down
+  # statement including its literal predicate values, which are often customer identifiers, so
+  # enable it only while diagnosing a problem.
   level: INFO
-  loggers:
-    "com.aws.aqp.connectors.CassandraExtractor":
-      level: DEBUG
-      additive: false
-      appenders:
-        - type: console
-    "com.aws.aqp.api.QueryRESTController":
-      level: DEBUG
-      additive: false
-      appenders:
-        - type: console
+  appenders:
+    - type: console
+      # requestId matches the X-Request-Id response header, so a caller's report can be traced
+      # to the log lines of that one request.
+      logFormat: "%-5p [%d{ISO8601,UTC}] [%X{requestId}] %c: %m%n%rEx"

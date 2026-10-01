@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token: this workflow builds and tests, it never writes to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Real backends for the integration tests, which skip rather than fail when these are absent.
+    # Images pinned by digest, like the Dockerfile.
+    services:
+      dynamodb-local:
+        # The image's default command runs in memory. Without -sharedDb it keeps one database per
+        # access key and region; the app and the test fixtures use the same ones.
+        image: amazon/dynamodb-local:3.3.1@sha256:ff89bd48ff32cd8d9be5fee8873b65b8854dc408f1afe881be6eb00247bc0dab
+        ports:
+          - 8000:8000
+      cassandra:
+        # Stands in for Amazon Keyspaces: same CQL protocol, no SigV4/TLS (see the test config).
+        image: cassandra:5.0.9@sha256:8819d1b7877ee6621751a761cc163332e9c3eaf671c8ef672f7c77a7c5bff05f
+        ports:
+          - 9042:9042
+        env:
+          MAX_HEAP_SIZE: 512M
+          HEAP_NEWSIZE: 128M
+        options: >-
+          --health-cmd "cqlsh -e 'describe keyspaces'"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 20
+    steps:
+      # Third-party actions are pinned to commit SHAs; a tag can be moved to different code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: corretto
+          java-version: '21'
+          cache: maven
+      - name: Build and test
+        run: mvn -B verify
+      - name: Fail if the integration tests were skipped
+        # They skip when a backend is unreachable; in CI that would hide a broken service.
+        run: |
+          for suite in QueryDDBTest QueryCassandraTest; do
+            report="query-app/target/surefire-reports/TEST-${suite}.xml"
+            test -f "$report" || { echo "::error::$suite did not run"; exit 1; }
+            if grep -q 'skipped="[1-9]' "$report"; then echo "::error::$suite was skipped"; exit 1; fi
+          done
+
+  image:
+    name: Build container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: build-script/Dockerfile
+          push: false
+          load: true
+          tags: simple-aggregation-query-app:ci
+      - name: Check the image runs as non-root and has its tools
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' simple-aggregation-query-app:ci)" = "10001:10001"
+          # The HEALTHCHECK relies on bash's /dev/tcp.
+          docker run --rm --entrypoint bash simple-aggregation-query-app:ci -c 'echo bash ok'
+      - name: Check the application refuses to start without its secret
+        run: |
+          if docker run --rm simple-aggregation-query-app:ci > out.log 2>&1; then
+            echo "::error::started without AQP_REPORTING_APP_SECRET"; exit 1
+          fi
+          grep -q "AQP_REPORTING_APP_SECRET" out.log

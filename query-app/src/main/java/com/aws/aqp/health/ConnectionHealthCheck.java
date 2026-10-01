@@ -3,17 +3,21 @@
 
 package com.aws.aqp.health;
 
-import com.aws.aqp.application.AppConfiguration;
-import com.aws.aqp.connectors.ConnectionKeyspacesFactory;
 import com.codahale.metrics.health.HealthCheck;
 import com.datastax.oss.driver.api.core.CqlSession;
 
+/**
+ * Checks Amazon Keyspaces reachability over the application's own session.
+ * <p>
+ * It used to build a second full CqlSession — its own connection pool and control connection —
+ * and never close it. Checking over the session the extractor uses is both cheaper and a more
+ * truthful answer to "can this process serve queries?".
+ */
 public class ConnectionHealthCheck extends HealthCheck {
     private final CqlSession cqlSession;
 
-    public ConnectionHealthCheck(AppConfiguration appConfiguration) {
-        ConnectionKeyspacesFactory connectionKeyspacesFactory = new ConnectionKeyspacesFactory(appConfiguration);
-        this.cqlSession = connectionKeyspacesFactory.buildSession();
+    public ConnectionHealthCheck(CqlSession cqlSession) {
+        this.cqlSession = cqlSession;
     }
 
     @Override
@@ -25,4 +29,3 @@ public class ConnectionHealthCheck extends HealthCheck {
             return Result.unhealthy("Cannot connect to Amazon Keyspaces ");
     }
 }
-

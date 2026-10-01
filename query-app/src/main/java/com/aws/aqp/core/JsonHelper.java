@@ -3,149 +3,85 @@
 
 package com.aws.aqp.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import javax.json.*;
+
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.Base64;
+import java.util.Map;
 
-public class JsonHelper {
+/**
+ * Converts DynamoDB items to JSON for the aggregation step.
+ * <p>
+ * Every attribute type is represented; nothing is silently dropped. The previous javax.json
+ * version returned sets as Java Lists and binary as an empty byte[], neither of which its
+ * builder handled, so those attributes vanished from the row. It also tested collections with
+ * {@code l().isEmpty()}, so an empty list or map became null and changed COUNT results.
+ */
+public final class JsonHelper {
 
-    public static JsonArray toJson(List<AttributeValue> attributeValues) {
-        if (attributeValues == null) {
-            return null;
-        }
-        JsonArrayBuilder valueBuilder = Json.createArrayBuilder();
-        for (AttributeValue a : attributeValues) {
-            add(toJson(a), valueBuilder);
-        }
-        return valueBuilder.build();
+    private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
+
+    private JsonHelper() {
     }
 
-    public static JsonObject toJson(Map<String, AttributeValue> attributeValues) {
-        if (attributeValues == null) {
-            return null;
+    public static ObjectNode toJson(Map<String, AttributeValue> item) {
+        ObjectNode object = NODES.objectNode();
+        for (Map.Entry<String, AttributeValue> attribute : item.entrySet()) {
+            object.set(attribute.getKey(), toJson(attribute.getValue()));
         }
-        JsonObjectBuilder valueBuilder = Json.createObjectBuilder();
-        for (Map.Entry<String, AttributeValue> a : attributeValues.entrySet()) {
-            add(a.getKey(), toJson(a.getValue()), valueBuilder);
-        }
-        return valueBuilder.build();
+        return object;
     }
 
-    public static void add(String key, Object value, JsonObjectBuilder object) {
-        if (value instanceof JsonValue) {
-            object.add(key, (JsonValue) value);
-
-        } else if (value instanceof String) {
-            object.add(key, (String) value);
-        } else if (value instanceof BigDecimal) {
-            object.add(key, (BigDecimal) value);
-        } else if (value instanceof Boolean) {
-            object.add(key, (Boolean) value);
-        } else if (value == null || value.equals(JsonValue.NULL)) {
-            object.addNull(key);
+    public static JsonNode toJson(AttributeValue value) {
+        if (value == null) {
+            return NODES.nullNode();
         }
-
+        switch (value.type()) {
+            case S:
+                return NODES.textNode(value.s());
+            case N:
+                return NODES.numberNode(new BigDecimal(value.n()));
+            case BOOL:
+                return NODES.booleanNode(value.bool());
+            case NUL:
+                return NODES.nullNode();
+            case B:
+                return NODES.textNode(base64(value.b()));
+            case M:
+                return toJson(value.m());
+            case L: {
+                ArrayNode array = NODES.arrayNode();
+                value.l().forEach(element -> array.add(toJson(element)));
+                return array;
+            }
+            case SS: {
+                ArrayNode array = NODES.arrayNode();
+                value.ss().forEach(array::add);
+                return array;
+            }
+            case NS: {
+                ArrayNode array = NODES.arrayNode();
+                value.ns().forEach(n -> array.add(new BigDecimal(n)));
+                return array;
+            }
+            case BS: {
+                ArrayNode array = NODES.arrayNode();
+                value.bs().forEach(b -> array.add(base64(b)));
+                return array;
+            }
+            default:
+                // UNKNOWN_TO_SDK_VERSION: a type newer than this SDK. Failing is better than
+                // aggregating over a row with the attribute quietly missing.
+                throw new IllegalStateException("Unsupported DynamoDB attribute type: " + value.type());
+        }
     }
 
-    public static void add(Object value, JsonArrayBuilder array) {
-        if (value instanceof JsonValue) {
-            array.add((JsonValue) value);
-        } else if (value instanceof String) {
-            array.add((String) value);
-        } else if (value instanceof BigDecimal) {
-            array.add((BigDecimal) value);
-        } else if (value instanceof Boolean) {
-            array.add((Boolean) value);
-        } else if (value.equals(JsonValue.NULL)) {
-            array.addNull();
-        }
-
+    private static String base64(SdkBytes bytes) {
+        return Base64.getEncoder().encodeToString(bytes.asByteArrayUnsafe());
     }
-
-    public static Object toJson(AttributeValue attributeValue) {
-
-        if (attributeValue == null) {
-            return null;
-        }
-        if (attributeValue.s() != null) {
-            return attributeValue.s();
-        }
-        if (attributeValue.n() != null) {
-            return new BigDecimal(attributeValue.n());
-        }
-        if (attributeValue.bool() != null) {
-            return attributeValue.bool();
-        }
-
-        if (attributeValue.b() != null) {
-            return new byte[0];
-        }
-
-        if (attributeValue.nul() != null && attributeValue.nul()) {
-            return JsonValue.NULL;
-        }
-
-        if (!attributeValue.m().isEmpty()) {
-            return toJson(attributeValue.m());
-        }
-        if (!attributeValue.l().isEmpty()) {
-            return toJson(attributeValue.l());
-        }
-
-        if (!attributeValue.ss().isEmpty()) {
-            return attributeValue.ss();
-        }
-
-        if (!attributeValue.ns().isEmpty()) {
-            return attributeValue.ns();
-        }
-
-        if (!attributeValue.bs().isEmpty()) {
-            return attributeValue.bs();
-        }
-        return null;
-    }
-
-    public static Map<String, AttributeValue> toAttribute(JsonObject jsonObject) {
-        Map<String, AttributeValue> attribute = new HashMap<>();
-        jsonObject.entrySet().forEach(e -> {
-            attribute.put(e.getKey(), toAttribute(e.getValue()));
-        });
-        return attribute;
-    }
-
-    public static List<AttributeValue> toAttribute(JsonArray jsonArray) {
-        List<AttributeValue> attributes = new LinkedList<>();
-        jsonArray.forEach(e -> {
-            attributes.add(toAttribute(e));
-        });
-        return attributes;
-    }
-
-    public static AttributeValue toAttribute(JsonValue jsonValue) {
-        if (jsonValue == null) {
-            return null;
-        }
-        switch (jsonValue.getValueType()) {
-            case STRING:
-                return AttributeValue.builder().s(((JsonString) jsonValue).getString()).build();
-            case OBJECT:
-                return AttributeValue.builder().m(toAttribute((JsonObject) jsonValue)).build();
-            case ARRAY:
-                return AttributeValue.builder().l(toAttribute((JsonArray) jsonValue)).build();
-            case NUMBER:
-                return AttributeValue.builder().n(((JsonNumber) jsonValue).toString()).build();
-            case TRUE:
-                return AttributeValue.builder().bool(true).build();
-            case FALSE:
-                return AttributeValue.builder().bool(false).build();
-            case NULL:
-                return AttributeValue.builder().nul(true).build();
-        }
-
-        return AttributeValue.builder().s("Empty").build();
-    }
-
-
 }

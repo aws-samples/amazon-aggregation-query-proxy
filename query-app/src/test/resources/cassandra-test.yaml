@@ -1,0 +1,18 @@
+# Test configuration for QueryCassandraTest. Test-only credentials.
+serviceName: KEYSPACES
+# Overridden by the test with the absolute path of src/test/resources/cassandra.
+pathToKeyspacesConfigFile: cassandra
+awsRegion: us-east-1
+localDDB: false
+users:
+  small-query-app:
+    secret: test-only-secret-small-0001
+    roles: [SMALL_QUERY]
+server:
+  applicationConnectors:
+    - type: http
+      port: 0
+  adminConnectors:
+    - type: http
+      bindHost: 127.0.0.1
+      port: 0

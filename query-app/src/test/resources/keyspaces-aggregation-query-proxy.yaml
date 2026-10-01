@@ -1,0 +1,20 @@
+# Test configuration for QueryDDBTest (DynamoDB Local). Test-only credentials.
+serviceName: DYNAMODB
+pathToKeyspacesConfigFile: /usr/app
+awsRegion: us-east-1
+localDDB: true
+users:
+  small-query-app:
+    secret: test-only-secret-small-0001
+    roles: [SMALL_QUERY]
+  large-query-app:
+    secret: test-only-secret-large-0002
+    roles: [LARGE_QUERY]
+server:
+  applicationConnectors:
+    - type: http
+      port: 0
+  adminConnectors:
+    - type: http
+      bindHost: 127.0.0.1
+      port: 0

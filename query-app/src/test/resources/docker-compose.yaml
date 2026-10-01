@@ -1,23 +1,22 @@
-version: '3.8'
+# Backends for the integration tests (QueryDDBTest, QueryCassandraTest):
+#   docker compose -f query-app/src/test/resources/docker-compose.yaml up -d
+# Same pinned images as CI.
 services:
+  cassandra:
+    # Stands in for Amazon Keyspaces: same CQL protocol, without SigV4 or TLS.
+    image: "cassandra:5.0.9@sha256:8819d1b7877ee6621751a761cc163332e9c3eaf671c8ef672f7c77a7c5bff05f"
+    container_name: cassandra
+    ports:
+      - "127.0.0.1:9042:9042"
+    environment:
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
   dynamodb-local:
-    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
-    image: "amazon/dynamodb-local:latest"
+    # Pinned: ":latest" made test runs depend on whatever was published most recently.
+    image: "amazon/dynamodb-local:3.3.1@sha256:ff89bd48ff32cd8d9be5fee8873b65b8854dc408f1afe881be6eb00247bc0dab"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
     container_name: dynamodb-local
     ports:
-      - "8000:8000"
-    volumes:
-      - "./docker/dynamodb:/home/dynamodblocal/data"
+      # Loopback only; the tests connect from the host.
+      - "127.0.0.1:8000:8000"
     working_dir: /home/dynamodblocal
-  app-node:
-    depends_on:
-      - dynamodb-local
-    image: banst/awscli
-    container_name: app-node
-    ports:
-      - "8080:8080"
-    environment:
-      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
-      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
-    command:
-      dynamodb describe-limits --endpoint-url http://dynamodb-local:8000 --region us-east-1

@@ -18,8 +18,21 @@ import java.time.Duration;
 
 public class ConnectionDDBFactory {
 
-    private final static int NUM_RETRIES_DDB = 64;
-    private final static int API_CALL_TIMEOUT_DDB = 10000;
+    /*
+     * Each ExecuteStatement page is its own API call, so these bound one page, not the whole
+     * query. Every retry must be able to happen inside the call timeout, or the retry count
+     * only misdescribes the client's behaviour. The SDK's throttling back-off (legacy mode:
+     * 500ms base, doubling, 20s cap) makes the worst case, with each attempt running to its
+     * attempt timeout, 4 x 5s + (0.5 + 1 + 2)s = 23.5s, inside the 30s call timeout.
+     * ConnectionDDBFactoryTest checks this against the SDK's own constants.
+     *
+     * History: 64 retries under a 10s timeout, then 8 under 30s — the latter needed 35.8-71.5s
+     * of back-off alone, so neither could ever use its budget.
+     */
+    static final int NUM_RETRIES_DDB = 3;
+    static final Duration API_CALL_ATTEMPT_TIMEOUT_DDB = Duration.ofSeconds(5);
+    static final Duration API_CALL_TIMEOUT_DDB = Duration.ofSeconds(30);
+    public final static String LOCAL_ENDPOINT = "http://localhost:8000";
 
     private final AppConfiguration appConfiguration;
 
@@ -28,28 +41,40 @@ public class ConnectionDDBFactory {
 
     }
 
+    /** The client for the configured target: DynamoDB Local when {@code localDDB} is set. */
+    public DynamoDbClient build() {
+        return Boolean.TRUE.equals(appConfiguration.getLocalDDB()) ? buildDDBLocalSession() : buildDDBSession();
+    }
+
     public DynamoDbClient buildDDBSession() {
         Region region = Region.of(appConfiguration.getAwsRegion());
         return DynamoDbClient.builder()
-                .overrideConfiguration(ClientOverrideConfiguration
-                        .builder().retryPolicy(RetryPolicy.builder()
+                .overrideConfiguration(ClientOverrideConfiguration.builder()
+                        .retryPolicy(RetryPolicy.builder()
                                 .numRetries(NUM_RETRIES_DDB)
-                                .backoffStrategy(BackoffStrategy.defaultStrategy()).
-                                        throttlingBackoffStrategy(BackoffStrategy.defaultThrottlingStrategy()).
-                                        numRetries(NUM_RETRIES_DDB).
-                                        retryCondition(RetryCondition.defaultRetryCondition()).build()).apiCallTimeout(Duration.ofMillis(API_CALL_TIMEOUT_DDB)).build()
-                )
+                                .backoffStrategy(BackoffStrategy.defaultStrategy())
+                                .throttlingBackoffStrategy(BackoffStrategy.defaultThrottlingStrategy())
+                                .retryCondition(RetryCondition.defaultRetryCondition())
+                                .build())
+                        .apiCallAttemptTimeout(API_CALL_ATTEMPT_TIMEOUT_DDB)
+                        .apiCallTimeout(API_CALL_TIMEOUT_DDB)
+                        .build())
                 .region(region)
                 .build();
     }
 
     public DynamoDbClient buildDDBLocalSession() {
         return DynamoDbClient.builder()
-                .endpointOverride(URI.create("http://localhost:8000"))
+                .endpointOverride(URI.create(LOCAL_ENDPOINT))
                 // The region is meaningless for local DynamoDb but required for client builder validation
                 .region(Region.US_EAST_1)
+                // DynamoDB Local validates the access key format and rejects anything that is not
+                // AKID-shaped with UnrecognizedClientException, so the previous "dummy-key" made
+                // every local run fail. These are the published AWS example credentials.
                 .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create("dummy-key", "dummy-secret")))
+                        AwsBasicCredentials.create(
+                                "AKIAIOSFODNN7EXAMPLE",
+                                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")))
                 .build();
     }
 }

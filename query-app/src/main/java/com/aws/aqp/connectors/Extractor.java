@@ -3,14 +3,22 @@
 
 package com.aws.aqp.connectors;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import io.dropwizard.lifecycle.Managed;
+import com.aws.aqp.core.sql.QueryPlan;
 
-public abstract class Extractor implements Managed {
+/**
+ * Runs the push-down half of a query. Implementations are shared by all requests and must hold
+ * no per-query state. They do not own their client; the application does.
+ */
+public abstract class Extractor {
 
     public Extractor() {
     }
 
-    public abstract String execute(String query) throws JsonProcessingException, InterruptedException;
+    /**
+     * Runs the plan's push-down half and returns the rows, as {@code {"resultSet":[...]}}, with
+     * what it cost to read them. Each implementation renders the push-down statement in its own
+     * dialect.
+     */
+    public abstract ExtractResult execute(QueryPlan plan) throws InterruptedException;
 
 }
