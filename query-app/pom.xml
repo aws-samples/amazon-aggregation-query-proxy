@@ -14,7 +14,7 @@
         <maven.compiler.release>21</maven.compiler.release>
 
         <dropwizard.version>5.0.2</dropwizard.version>
-        <awssdk.version>2.55.8</awssdk.version>
+        <awssdk.version>2.55.11</awssdk.version>
         <!-- Stays on the com.datastax.oss coordinates, which the SigV4 plugin is built against.
              The same classes are also published as org.apache.cassandra:java-driver-core;
              having both on the classpath would be a duplicate-class conflict (banned below). -->
