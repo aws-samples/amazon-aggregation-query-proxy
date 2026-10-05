@@ -3,25 +3,42 @@
 
 package com.aws.aqp.application;
 
+import com.aws.aqp.api.AqpExceptionMappers;
 import com.aws.aqp.api.QueryRESTController;
+import com.aws.aqp.api.RequestIdFilter;
 import com.aws.aqp.auth.AqpAuthenticator;
 import com.aws.aqp.auth.AqpAuthorizer;
 import com.aws.aqp.auth.AqpUser;
 import com.aws.aqp.connectors.CassandraExtractor;
+import com.aws.aqp.connectors.ConnectionDDBFactory;
+import com.aws.aqp.connectors.ConnectionKeyspacesFactory;
 import com.aws.aqp.connectors.Extractor;
 import com.aws.aqp.connectors.DatabaseType;
 import com.aws.aqp.connectors.DynamodbExtractor;
 import com.aws.aqp.health.ConnectionHealthCheck;
-import io.dropwizard.Application;
+import com.aws.aqp.health.DynamoDbHealthCheck;
+import com.codahale.metrics.health.HealthCheck;
+import com.datastax.oss.driver.api.core.CqlSession;
 import io.dropwizard.auth.AuthDynamicFeature;
 import io.dropwizard.auth.AuthValueFactoryProvider;
 import io.dropwizard.auth.basic.BasicCredentialAuthFilter;
-import io.dropwizard.health.http.HttpHealthCheck;
-import io.dropwizard.setup.Bootstrap;
-import io.dropwizard.setup.Environment;
+import io.dropwizard.configuration.EnvironmentVariableSubstitutor;
+import io.dropwizard.configuration.SubstitutingSourceProvider;
+import io.dropwizard.core.Application;
+import io.dropwizard.core.setup.Bootstrap;
+import io.dropwizard.core.setup.Environment;
+import io.dropwizard.lifecycle.AutoCloseableManager;
 import org.glassfish.jersey.server.filter.RolesAllowedDynamicFeature;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 public class App extends Application<AppConfiguration> {
+
+    private static final String KEYSPACES_HEALTH_CHECK = "keyspaces-tcp-dependency";
+    private static final String DYNAMODB_HEALTH_CHECK = "ddb-http-dependency";
+    private static final String REALM = "aggregation-query-proxy";
+    private static final Logger LOGGER = LoggerFactory.getLogger(App.class);
 
     public static void main(String[] args) throws Exception {
         new App().run(args);
@@ -32,40 +49,92 @@ public class App extends Application<AppConfiguration> {
         return "simple-query-aggregator-proxy";
     }
 
+    /**
+     * Enables {@code ${ENV_VAR}} substitution in the YAML config, so secrets can be injected at
+     * runtime instead of being written into the file and baked into the image. Strict: a
+     * referenced variable that is not set (and has no {@code ${VAR:-default}}) fails startup,
+     * rather than leaving the literal placeholder in place as a guessable secret.
+     */
     @Override
     public void initialize(Bootstrap<AppConfiguration> bootstrap) {
-        // nothing to do yet
+        bootstrap.setConfigurationSourceProvider(new SubstitutingSourceProvider(
+                bootstrap.getConfigurationSourceProvider(), new EnvironmentVariableSubstitutor(true)));
     }
 
     @Override
     public void run(AppConfiguration appConfiguration, Environment environment) {
-        Extractor extractor = null;
+        if (appConfiguration.getClientSecret() != null) {
+            throw new IllegalStateException("'clientSecret' is no longer supported. Configure one entry "
+                    + "per client under 'users', each with its own 'secret' and 'roles'. See the README.");
+        }
 
-        if (appConfiguration.getServiceName().equals(DatabaseType.KEYSPACES.toString())) {
-            environment.healthChecks().register("keyspaces-tcp-dependency", new ConnectionHealthCheck(appConfiguration));
-            if (environment.healthChecks().runHealthCheck("keyspaces-tcp-dependency").isHealthy()) {
-                extractor = new CassandraExtractor(appConfiguration);
-            }
-        }
-        if (appConfiguration.getServiceName().equals(DatabaseType.DYNAMODB.toString())) {
-            String ddbEndpoint = System.getProperty("dynamodb-endpoint",String.format("https://dynamodb.%s.amazonaws.com", appConfiguration.getAwsRegion().toLowerCase()));
-            environment.healthChecks().register("ddb-http-dependency",
-                    new HttpHealthCheck(ddbEndpoint));
-            if (environment.healthChecks().runHealthCheck("dynamodb-endpoint").isHealthy()) {
-                extractor = new DynamodbExtractor(appConfiguration);
-            }
-        }
+        Extractor extractor = buildExtractor(appConfiguration, environment);
 
         environment.jersey().register(new AuthDynamicFeature(new BasicCredentialAuthFilter.Builder<AqpUser>()
-                .setAuthenticator(new AqpAuthenticator(appConfiguration))
+                .setAuthenticator(new AqpAuthenticator(appConfiguration.getUsers()))
                 .setAuthorizer(new AqpAuthorizer())
-                .setRealm("Xnimvw3rrszlaEXAMPLE=")
+                .setRealm(REALM)
                 .buildAuthFilter()));
         environment.jersey().register(new AuthValueFactoryProvider.Binder<>(AqpUser.class));
         environment.jersey().register(RolesAllowedDynamicFeature.class);
 
-        environment.jersey().register(new QueryRESTController(extractor));
-        environment.lifecycle().manage(extractor);
+        environment.jersey().register(new AqpExceptionMappers.InvalidQuery());
+        environment.jersey().register(new AqpExceptionMappers.ResultTooLarge());
+        environment.jersey().register(new AqpExceptionMappers.QueryTimeout());
+        environment.jersey().register(new AqpExceptionMappers.Aggregation());
+        environment.jersey().register(new AqpExceptionMappers.DataStore());
+        environment.jersey().register(new AqpExceptionMappers.Cql());
+        environment.jersey().register(new AqpExceptionMappers.SdkClient());
 
+        environment.jersey().register(new RequestIdFilter());
+        environment.jersey().register(new QueryRESTController(extractor, environment.metrics()));
+    }
+
+    /**
+     * Builds the one client for the configured data store, shares it between the health check and
+     * the extractor, and closes it on shutdown. Fails startup with a message if the store is not
+     * reachable.
+     * <p>
+     * The health check and the extractor previously each built their own client — two connection
+     * pools — and the health check's was never closed.
+     */
+    private Extractor buildExtractor(AppConfiguration appConfiguration, Environment environment) {
+        DatabaseType databaseType = appConfiguration.getDatabaseType();
+
+        switch (databaseType) {
+            case KEYSPACES:
+                CqlSession session = new ConnectionKeyspacesFactory(appConfiguration).buildSession();
+                environment.lifecycle().manage(new AutoCloseableManager(session));
+                registerAndRequireHealthy(environment, KEYSPACES_HEALTH_CHECK, new ConnectionHealthCheck(session));
+                return new CassandraExtractor(appConfiguration, session);
+
+            case DYNAMODB:
+                DynamoDbClient client = new ConnectionDDBFactory(appConfiguration).build();
+                environment.lifecycle().manage(new AutoCloseableManager(client));
+                registerAndRequireHealthy(environment, DYNAMODB_HEALTH_CHECK, new DynamoDbHealthCheck(client));
+                return new DynamodbExtractor(appConfiguration, client);
+
+            default:
+                throw new IllegalStateException("Unsupported data store: " + databaseType);
+        }
+    }
+
+    /**
+     * Registers a health check and refuses to start if the dependency is not reachable.
+     * <p>
+     * The name is passed once and used for both the registration and the lookup. They were
+     * previously two different string literals for DynamoDB ("ddb-http-dependency" registered,
+     * "dynamodb-endpoint" looked up), so the lookup threw NoSuchElementException and the
+     * application could never start in DynamoDB mode at all.
+     */
+    private void registerAndRequireHealthy(Environment environment, String name, HealthCheck healthCheck) {
+        environment.healthChecks().register(name, healthCheck);
+        HealthCheck.Result result = environment.healthChecks().runHealthCheck(name);
+        if (!result.isHealthy()) {
+            throw new IllegalStateException(String.format(
+                    "Dependency health check '%s' failed, refusing to start: %s",
+                    name, result.getMessage()), result.getError());
+        }
+        LOGGER.info("Dependency health check '{}' passed", name);
     }
 }

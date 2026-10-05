@@ -4,3 +4,10 @@
 *.iws
 # Maven
 target/
+dependency-reduced-pom.xml
+build.log
+
+# Copied in by build-script/build.sh
+build-script/*.jar
+build-script/*.conf
+build-script/*.yaml

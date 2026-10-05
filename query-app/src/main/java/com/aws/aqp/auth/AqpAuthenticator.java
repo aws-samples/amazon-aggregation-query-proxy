@@ -3,36 +3,71 @@
 
 package com.aws.aqp.auth;
 
-import com.aws.aqp.application.AppConfiguration;
-import io.dropwizard.auth.AuthenticationException;
+import com.aws.aqp.application.ClientCredentials;
 import io.dropwizard.auth.Authenticator;
 import io.dropwizard.auth.basic.BasicCredentials;
-import io.dropwizard.util.Maps;
 
-import java.util.Collections;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Authenticates Basic credentials against the configured clients.
+ * <p>
+ * Replaces a version with two hard-coded user names sharing one secret (default "secret"),
+ * compared with {@code String.equals}. {@code equals} returns at the first differing character,
+ * so response time leaked how much of a guess was right.
+ * <p>
+ * Now each client has its own secret, and comparison is constant time: both sides are reduced to
+ * SHA-256 digests (equal length regardless of input) and compared with
+ * {@link MessageDigest#isEqual}. An unknown user name is compared against a dummy digest, so the
+ * response time does not reveal which names exist.
+ */
 public class AqpAuthenticator implements Authenticator<BasicCredentials, AqpUser> {
 
-    private AppConfiguration appConfiguration;
+    private static final class Client {
+        final byte[] secretDigest;
+        final Set<String> roles;
 
-    public AqpAuthenticator(AppConfiguration appConfiguration) {
-        this.appConfiguration = appConfiguration;
-
+        Client(byte[] secretDigest, Set<String> roles) {
+            this.secretDigest = secretDigest;
+            this.roles = roles;
+        }
     }
 
-    private static final Map<String, Set<String>> VALID_USERS = Collections.unmodifiableMap(Maps.of(
-            "small-query-app", Collections.singleton("SMALL_QUERY"),
-            "large-query-app", Collections.singleton("LARGE_QUERY")
-    ));
+    private final Map<String, Client> clients = new HashMap<>();
+    private final byte[] dummyDigest = sha256("no such user; this value never matches");
+
+    public AqpAuthenticator(Map<String, ClientCredentials> users) {
+        if (users == null || users.isEmpty()) {
+            throw new IllegalArgumentException("At least one entry under 'users' must be configured.");
+        }
+        users.forEach((name, credentials) ->
+                clients.put(name, new Client(sha256(credentials.getSecret()), Set.copyOf(credentials.getRoles()))));
+    }
 
     @Override
-    public Optional<AqpUser> authenticate(BasicCredentials credentials) throws AuthenticationException {
-        if (VALID_USERS.containsKey(credentials.getUsername()) && appConfiguration.getClientSecret().equals(credentials.getPassword())) {
-            return Optional.of(new AqpUser(credentials.getUsername(), VALID_USERS.get(credentials.getUsername())));
+    public Optional<AqpUser> authenticate(BasicCredentials credentials) {
+        Client client = clients.get(credentials.getUsername());
+        byte[] expected = client == null ? dummyDigest : client.secretDigest;
+        boolean matches = MessageDigest.isEqual(expected, sha256(credentials.getPassword()));
+        if (client == null || !matches) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        return Optional.of(new AqpUser(credentials.getUsername(), client.roles));
+    }
+
+    private static byte[] sha256(String value) {
+        try {
+            return MessageDigest.getInstance("SHA-256")
+                    .digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandatory on every Java platform.
+            throw new IllegalStateException(e);
+        }
     }
 }

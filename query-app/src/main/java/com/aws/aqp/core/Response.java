@@ -3,15 +3,12 @@
 
 package com.aws.aqp.core;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class Response {
 
     private Stats stats;
     private JsonNode response;
-    ObjectMapper objectMapper = new ObjectMapper();
 
     public Response(Stats stats, JsonNode response) {
         this.stats = stats;
@@ -26,7 +23,7 @@ public class Response {
         this.stats = stats;
     }
 
-    public JsonNode getResponse() throws JsonProcessingException {
+    public JsonNode getResponse() {
         return response;
     }
 

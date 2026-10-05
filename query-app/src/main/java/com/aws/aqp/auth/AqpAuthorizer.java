@@ -4,19 +4,13 @@
 package com.aws.aqp.auth;
 
 import io.dropwizard.auth.Authorizer;
-import org.jetbrains.annotations.Nullable;
 
-import javax.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerRequestContext;
 
 public class AqpAuthorizer implements Authorizer<AqpUser> {
 
     @Override
-    public boolean authorize(AqpUser aqpUser, String s) {
-        return false;
-    }
-
-    @Override
-    public boolean authorize(AqpUser principal, String role, @Nullable ContainerRequestContext requestContext) {
-        return principal.getRoles() != null && principal.getRoles().contains(role);
+    public boolean authorize(AqpUser principal, String role, ContainerRequestContext requestContext) {
+        return principal.getRoles().contains(role);
     }
 }
