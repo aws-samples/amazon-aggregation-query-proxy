@@ -5,7 +5,7 @@
 # digest together.
 
 # ---- Build stage: compiles and runs unit tests; integration tests skip without DynamoDB Local.
-FROM maven:3.9.16-amazoncorretto-21-al2023@sha256:efdf660ec74911594e2a7f642e177ffba21b741c8e848223bf41a6d0fc367692 AS build
+FROM maven:3-amazoncorretto-24-al2023@sha256:9bd1d20d8b70542833657acced078c7ac146a280c048abd5f57dc9a44e1e8b20 AS build
 WORKDIR /src
 COPY pom.xml ./
 COPY query-app/pom.xml query-app/
