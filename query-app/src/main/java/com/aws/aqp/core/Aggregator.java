@@ -83,7 +83,7 @@ public class Aggregator {
         long aggregateNanos;
         try (Timer.Context ignored = aggregateTimer.time()) {
             long start = System.nanoTime();
-            aggregatedResult = new IonEngine().query(plan.aggregationQuery(), extracted.document());
+            aggregatedResult = new AggregationEngine().query(plan.aggregationQuery(), extracted.document());
             aggregateNanos = System.nanoTime() - start;
         }
 

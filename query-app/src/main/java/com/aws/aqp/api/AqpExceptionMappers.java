@@ -11,7 +11,8 @@ import com.datastax.oss.driver.api.core.DriverTimeoutException;
 import com.datastax.oss.driver.api.core.servererrors.QueryValidationException;
 import com.datastax.oss.driver.api.core.servererrors.ReadTimeoutException;
 import com.datastax.oss.driver.api.core.servererrors.UnauthorizedException;
-import org.partiql.lang.SqlException;
+import com.aws.aqp.core.PartiQLErrors;
+import org.partiql.spi.errors.PRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
@@ -71,18 +72,16 @@ public final class AqpExceptionMappers {
     }
 
     /**
-     * PartiQL failed to compile or evaluate the aggregation step — for example SUM over a string
+     * PartiQL failed to plan or evaluate the aggregation step — for example SUM over a string
      * attribute. That is a property of the query and its data, not a server fault.
      */
-    public static class Aggregation implements ExceptionMapper<SqlException> {
+    public static class Aggregation implements ExceptionMapper<PRuntimeException> {
         @Override
-        public Response toResponse(SqlException e) {
-            String message = e.getMessage() == null ? "" : e.getMessage();
-            int newline = message.indexOf('\n');
-            String firstLine = (newline < 0 ? message : message.substring(0, newline)).trim();
-            LOGGER.info("Aggregation step rejected the query: {}", firstLine);
+        public Response toResponse(PRuntimeException e) {
+            String described = PartiQLErrors.describe(e.getError());
+            LOGGER.info("Aggregation step rejected the query: {}", described);
             return error(Response.Status.BAD_REQUEST.getStatusCode(),
-                    "The aggregation step could not evaluate the query: " + firstLine);
+                    "The aggregation step could not evaluate the query: " + described);
         }
     }
 

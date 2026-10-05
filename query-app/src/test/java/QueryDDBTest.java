@@ -222,13 +222,20 @@ class QueryDDBTest {
     void rejectsUnsupportedShapesWith400() {
         for (String statement : new String[]{
                 "select count(pk) as c FROM testTable t",
-                "select type, sum(clicks) as total FROM testTable GROUP BY type ORDER BY total",
                 "select count(pk) as c FROM testTable -- trailing comment"}) {
             HttpResponse<String> response = send(statement);
             assertEquals(400, response.getStatus(),
                     () -> "expected 400 for [" + statement + "], got " + response.getStatus()
                             + ": " + response.getBody());
         }
+    }
+
+    /** ORDER BY on a SELECT alias works since the PartiQL 1.x upgrade (it was a 400 before). */
+    @Test
+    void ordersBySelectAlias() throws JsonProcessingException {
+        JsonNode row = firstRow(query(
+                "select type, sum(clicks) as total FROM testTable GROUP BY type ORDER BY total DESC"));
+        assertEquals(10, row.get("total").asInt());
     }
 
     /** A data-dependent evaluation failure is the caller's to fix: 400, not 500. */

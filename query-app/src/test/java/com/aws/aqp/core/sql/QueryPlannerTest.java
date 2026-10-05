@@ -3,7 +3,7 @@
 
 package com.aws.aqp.core.sql;
 
-import com.aws.aqp.core.IonEngine;
+import com.aws.aqp.core.AggregationEngine;
 import com.aws.aqp.core.errors.InvalidQueryException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,7 +44,7 @@ class QueryPlannerTest {
     /** Runs the plan's aggregation half and output window, as Aggregator does. */
     private JsonNode aggregate(String query, String rowsJson) throws Exception {
         QueryPlan plan = planner.plan(query);
-        String result = new IonEngine().query(plan.aggregationQuery(), "{\"resultSet\":" + rowsJson + "}");
+        String result = new AggregationEngine().query(plan.aggregationQuery(), "{\"resultSet\":" + rowsJson + "}");
         return plan.window((com.fasterxml.jackson.databind.node.ArrayNode) mapper.readTree(result));
     }
 
@@ -162,6 +162,13 @@ class QueryPlannerTest {
                     pushDown("select sum(\"Order Total\") as t, \"Zip\" FROM t GROUP BY \"Zip\""));
         }
 
+        /** An ORDER BY reference to a SELECT alias is not a stored column; don't fetch it. */
+        @Test
+        void doesNotProjectSelectAliasesUsedInOrderBy() {
+            assertEquals("SELECT zip, amount FROM t",
+                    pushDown("select zip, sum(amount) as total FROM t GROUP BY zip ORDER BY total"));
+        }
+
         @Test
         void doesNotProjectGroupByAliases() {
             assertEquals("SELECT amount, zip FROM t",
@@ -262,6 +269,15 @@ class QueryPlannerTest {
             assertEquals(0, aggregate("select count(*) as n FROM t LIMIT 0", rows).size());
         }
 
+        /** PartiQL 1.x resolves SELECT aliases in ORDER BY; 0.14 could not and this was a 400. */
+        @Test
+        void orderByCanUseASelectAlias() throws Exception {
+            JsonNode rows = aggregate(
+                    "select zip, sum(amount) as t FROM sales GROUP BY zip ORDER BY t DESC", ROWS);
+            assertEquals("Z1", rows.get(0).get("zip").asText(), rows::toString);
+            assertEquals(20, rows.get(0).get("t").asInt(), rows::toString);
+        }
+
         @Test
         void offsetAndLimitWindowTheOrderedGroups() throws Exception {
             JsonNode rows = aggregate(
@@ -285,7 +301,7 @@ class QueryPlannerTest {
 
         @Test
         void evaluatesOverTheBoundRows() throws Exception {
-            String result = new IonEngine().query(
+            String result = new AggregationEngine().query(
                     planner.plan("select count(pk) as CNT FROM t").aggregationQuery(),
                     "{\"resultSet\":[{\"pk\":\"a\"},{\"pk\":\"b\"}]}");
             assertEquals(2, mapper.readTree(result).get(0).get("CNT").asInt());
@@ -317,7 +333,6 @@ class QueryPlannerTest {
                 "select count(pk) as c FROM a JOIN b ON a.k = b.k     | Joins",
                 "select (select max(x) from t) as m FROM t            | Subqueries",
                 "select count(pk) as c FROM t UNION select 1 FROM t   | Set operations",
-                "select zip, sum(amount) as total FROM t GROUP BY zip ORDER BY total | SELECT alias",
                 "select count(pk) as c FROM t -- comment              | comments",
                 "select count(pk) as c FROM t /* c */                 | comments",
                 "select count(pk) as c FROM t WHERE x = 1 // note     | comments",

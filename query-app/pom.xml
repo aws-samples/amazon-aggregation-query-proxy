@@ -20,8 +20,8 @@
              having both on the classpath would be a duplicate-class conflict (banned below). -->
         <datastax.version>4.17.0</datastax.version>
         <sigv4-plugin.version>4.0.9</sigv4-plugin.version>
-        <partiql.version>0.14.9</partiql.version>
-        <kotlin.version>1.6.21</kotlin.version>
+        <partiql.version>1.6.1</partiql.version>
+        <kotlin.version>1.9.20</kotlin.version>
         <unirest.version>3.14.5</unirest.version>
     </properties>
 
@@ -52,10 +52,8 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- PartiQL's transitive Kotlin artifacts otherwise resolve to three different
-                 versions, one of them a release candidate (stdlib 1.6.20, stdlib-common 1.6.0,
-                 stdlib-jdk7/jdk8 1.6.0-RC2). Aligned on the last patch of the line PartiQL
-                 0.14 is compiled against. -->
+            <!-- Aligns PartiQL's transitive Kotlin artifacts on one version (the one
+                 partiql-lang 1.6 is compiled against; it needs 1.9+ at runtime). -->
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-bom</artifactId>
@@ -204,7 +202,7 @@
 
         <dependency>
             <groupId>org.partiql</groupId>
-            <artifactId>partiql-lang-kotlin</artifactId>
+            <artifactId>partiql-lang</artifactId>
             <version>${partiql.version}</version>
         </dependency>
         <!-- PartiQL declares it runtime-only, but javac needs it to resolve ExprValue's

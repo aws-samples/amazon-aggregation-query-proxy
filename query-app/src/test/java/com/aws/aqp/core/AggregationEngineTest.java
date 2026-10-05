@@ -13,12 +13,14 @@ import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * PartiQL 0.14 converts Ion integers to Java longs while binding its input, so an integer
- * outside the 64-bit range silently wrapped: 12345678901234567890 became -6101065172474983726,
- * even in a plain projection. DynamoDB numbers carry up to 38 digits. (PartiQL 0.7 did not have
- * this problem; it arrived with the upgrade.)
+ * Number exactness and schemaless tolerance of the aggregation engine (PartiQL 1.x).
+ * <p>
+ * History: PartiQL 0.14 converted integers to Java longs while binding its input, so an integer
+ * outside the 64-bit range silently wrapped (12345678901234567890 became -6101065172474983726),
+ * and a row lacking a referenced attribute failed the whole query. DynamoDB numbers carry up to
+ * 38 digits, and DynamoDB items are schemaless, so both mattered.
  */
-class IonEngineTest {
+class AggregationEngineTest {
 
     private static final String HUGE = "12345678901234567890";
     private static final String HUGER = "99999999999999999999999999999999999999"; // 38 digits
@@ -27,7 +29,7 @@ class IonEngineTest {
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
 
     private BigDecimal single(String sql, String rows, String column) throws Exception {
-        JsonNode result = mapper.readTree(new IonEngine().query(sql, "{\"resultSet\":" + rows + "}"));
+        JsonNode result = mapper.readTree(new AggregationEngine().query(sql, "{\"resultSet\":" + rows + "}"));
         return result.get(0).get(column).decimalValue();
     }
 
@@ -49,6 +51,22 @@ class IonEngineTest {
         BigDecimal sum = single("SELECT SUM(r.m.v) AS s FROM resultSet r",
                 "[{\"m\":{\"v\":" + HUGE + "}}]", "s");
         assertEquals(0, new BigDecimal(HUGE).compareTo(sum), sum::toPlainString);
+    }
+
+    /** Two in-range longs whose sum does not fit a long: 0.14 threw "Int overflow". */
+    @Test
+    void sumsLongsPastTheLongRangeExactly() throws Exception {
+        BigDecimal sum = single("SELECT SUM(x) AS s FROM resultSet",
+                "[{\"x\":9000000000000000000},{\"x\":9000000000000000000}]", "s");
+        assertEquals(0, new BigDecimal("18000000000000000000").compareTo(sum), sum::toPlainString);
+    }
+
+    /** DynamoDB items are schemaless; a row without the attribute must not fail the query. */
+    @Test
+    void toleratesRowsMissingTheAttribute() throws Exception {
+        BigDecimal sum = single("SELECT SUM(x) AS s FROM resultSet",
+                "[{\"x\":1,\"g\":\"A\"},{\"g\":\"A\"},{\"x\":2,\"g\":\"B\"}]", "s");
+        assertEquals(0, new BigDecimal(3).compareTo(sum), sum::toPlainString);
     }
 
     /** In-range integers keep integer semantics: 7 / 2 is still integer division. */

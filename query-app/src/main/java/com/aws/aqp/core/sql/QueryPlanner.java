@@ -6,13 +6,28 @@ package com.aws.aqp.core.sql;
 import com.aws.aqp.core.errors.InvalidQueryException;
 import com.aws.aqp.core.sql.SqlLexer.Token;
 import com.aws.aqp.core.sql.SqlLexer.Type;
-import org.partiql.lang.SqlException;
-import org.partiql.lang.domains.PartiqlAst;
-import org.partiql.lang.syntax.PartiQLParserBuilder;
-import org.partiql.pig.runtime.SymbolPrimitive;
+import com.aws.aqp.core.PartiQLErrors;
+import org.partiql.ast.AstNode;
+import org.partiql.ast.AstVisitor;
+import org.partiql.ast.GroupBy;
+import org.partiql.ast.Identifier;
+import org.partiql.ast.Query;
+import org.partiql.ast.QueryBody;
+import org.partiql.ast.Select;
+import org.partiql.ast.SelectItem;
+import org.partiql.ast.SelectList;
+import org.partiql.ast.SelectStar;
+import org.partiql.ast.SelectValue;
+import org.partiql.ast.SetQuantifier;
+import org.partiql.ast.Statement;
+import org.partiql.ast.expr.Expr;
+import org.partiql.ast.expr.ExprCall;
+import org.partiql.ast.expr.ExprQuerySet;
+import org.partiql.ast.expr.ExprVarRef;
+import org.partiql.parser.PartiQLParser;
+import org.partiql.spi.errors.PRuntimeException;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -31,8 +46,8 @@ import java.util.regex.Pattern;
  * <ol>
  *   <li>{@link SqlLexer} splits the statement into top-level clauses. FROM and WHERE are kept
  *       as verbatim text for the data store, so its dialect-specific syntax survives.</li>
- *   <li>The aggregation clauses are parsed with PartiQL's own parser — the same engine that will
- *       evaluate them — and every column they reference is read off the AST. Those columns
+ *   <li>The aggregation clauses are parsed with PartiQL's own parser (1.x) — the same engine that
+ *       will evaluate them — and every column they reference is read off the AST. Those columns
  *       become the push-down projection.</li>
  * </ol>
  * Stateless and safe for concurrent use.
@@ -273,156 +288,174 @@ public final class QueryPlanner {
         }
     }
 
-    /** Collects every identifier expression, and counts nested SELECTs and aggregate calls. */
-    private static final class IdentifierCollector extends PartiqlAst.Visitor {
-        final List<PartiqlAst.Expr.Id> ids = new ArrayList<>();
+    /**
+     * The aggregate functions PartiQL evaluates. The 1.x AST has no distinct node type for an
+     * aggregate call, so they are recognised by name; the set only decides push-down choices
+     * (row-limit, key-only projection), never whether a query is accepted.
+     */
+    private static final Set<String> AGGREGATE_FUNCTIONS = Set.of(
+            "count", "sum", "min", "max", "avg", "any", "some", "every", "array_agg", "group_as");
+
+    /** Collects every referenced identifier root, and counts nested SELECTs and aggregate calls. */
+    private static final class IdentifierCollector extends AstVisitor<Void, Void> {
+        final List<Identifier.Simple> ids = new ArrayList<>();
         int nestedSelects;
         int aggregateCalls;
 
         @Override
-        protected void visitExprCallAgg(PartiqlAst.Expr.CallAgg node) {
-            aggregateCalls++;
+        public Void defaultReturn(AstNode node, Void ctx) {
+            return null;
         }
 
         @Override
-        protected void visitExprId(PartiqlAst.Expr.Id node) {
-            ids.add(node);
+        public Void visitExprVarRef(ExprVarRef node, Void ctx) {
+            Identifier identifier = node.getIdentifier();
+            // For a qualified reference (a.b) the root is what must be fetched from the store.
+            ids.add(identifier.hasQualifier() ? identifier.getQualifier().get(0) : identifier.getIdentifier());
+            return defaultVisit(node, ctx);
         }
 
         @Override
-        protected void visitExprSelect(PartiqlAst.Expr.Select node) {
+        public Void visitExprQuerySet(ExprQuerySet node, Void ctx) {
             nestedSelects++;
+            return defaultVisit(node, ctx);
+        }
+
+        @Override
+        public Void visitExprCall(ExprCall node, Void ctx) {
+            Identifier function = node.getFunction();
+            if (!function.hasQualifier()
+                    && AGGREGATE_FUNCTIONS.contains(function.getIdentifier().getText().toLowerCase(Locale.ROOT))) {
+                aggregateCalls++;
+            }
+            return defaultVisit(node, ctx);
         }
     }
 
     private static Analysis analyse(String aggregationBody) {
-        PartiqlAst.Expr.Select select = parseSelect(aggregationBody);
+        ExprQuerySet querySet = parseQuerySet(aggregationBody);
+        if (!(querySet.getBody() instanceof QueryBody.SFW)) {
+            // The lexer rejects top-level UNION etc.; this catches parenthesised forms.
+            throw new InvalidQueryException("Set operations (UNION, INTERSECT, EXCEPT) are not supported.");
+        }
+        QueryBody.SFW sfw = (QueryBody.SFW) querySet.getBody();
+        Select select = sfw.getSelect();
 
         Set<String> selectAliases = new HashSet<>();
-        if (select.getProject() instanceof PartiqlAst.Projection.ProjectList) {
-            for (PartiqlAst.ProjectItem item :
-                    ((PartiqlAst.Projection.ProjectList) select.getProject()).getProjectItems()) {
-                if (item instanceof PartiqlAst.ProjectItem.ProjectExpr) {
-                    addSymbol(selectAliases, ((PartiqlAst.ProjectItem.ProjectExpr) item).getAsAlias());
+        if (select instanceof SelectList) {
+            for (SelectItem item : ((SelectList) select).getItems()) {
+                if (item instanceof SelectItem.Expr) {
+                    addSymbol(selectAliases, ((SelectItem.Expr) item).getAsAlias());
                 }
             }
         }
         Set<String> groupAliases = new HashSet<>();
-        if (select.getGroup() != null) {
-            for (PartiqlAst.GroupKey key : select.getGroup().getKeyList().getKeys()) {
+        if (sfw.getGroupBy() != null) {
+            for (GroupBy.Key key : sfw.getGroupBy().getKeys()) {
                 addSymbol(groupAliases, key.getAsAlias());
             }
-            addSymbol(groupAliases, select.getGroup().getGroupAsAlias());
+            addSymbol(groupAliases, sfw.getGroupBy().getAsAlias());
         }
 
         // Walked separately because the same name means different things in different clauses:
         // in GROUP BY it is always a column; in the SELECT list it may be a GROUP BY alias; in
-        // HAVING and ORDER BY it may be a GROUP BY alias or (unsupported) a SELECT alias.
+        // HAVING and ORDER BY it may be a GROUP BY alias or a SELECT alias.
         IdentifierCollector groupIds = new IdentifierCollector();
         IdentifierCollector selectIds = new IdentifierCollector();
         IdentifierCollector lateIds = new IdentifierCollector();
-        IdentifierCollector limitIds = new IdentifierCollector();
 
-        if (select.getGroup() != null) {
-            groupIds.walkGroupBy(select.getGroup());
+        if (sfw.getGroupBy() != null) {
+            sfw.getGroupBy().accept(groupIds, null);
         }
-        selectIds.walkProjection(select.getProject());
-        if (select.getHaving() != null) {
-            lateIds.walkExpr(select.getHaving());
+        select.accept(selectIds, null);
+        if (sfw.getHaving() != null) {
+            sfw.getHaving().accept(lateIds, null);
         }
-        if (select.getOrder() != null) {
-            lateIds.walkOrderBy(select.getOrder());
+        if (querySet.getOrderBy() != null) {
+            querySet.getOrderBy().accept(lateIds, null);
         }
-        if (select.getLimit() != null) {
-            limitIds.walkExpr(select.getLimit());
-        }
-        if (select.getOffset() != null) {
-            limitIds.walkExpr(select.getOffset());
-        }
-        if (groupIds.nestedSelects + selectIds.nestedSelects + lateIds.nestedSelects + limitIds.nestedSelects > 0) {
+        if (groupIds.nestedSelects + selectIds.nestedSelects + lateIds.nestedSelects > 0) {
             throw new InvalidQueryException("Subqueries are not supported.");
         }
 
         Set<String> columns = new LinkedHashSet<>();
-        for (PartiqlAst.Expr.Id id : selectIds.ids) {
-            if (!(isCaseInsensitive(id) && groupAliases.contains(folded(id)))) {
+        for (Identifier.Simple id : selectIds.ids) {
+            if (!(id.isRegular() && groupAliases.contains(folded(id)))) {
                 columns.add(render(id));
             }
         }
-        for (PartiqlAst.Expr.Id id : groupIds.ids) {
+        for (Identifier.Simple id : groupIds.ids) {
             columns.add(render(id));
         }
-        for (PartiqlAst.Expr.Id id : lateIds.ids) {
-            if (isCaseInsensitive(id) && groupAliases.contains(folded(id))) {
+        for (Identifier.Simple id : lateIds.ids) {
+            if (id.isRegular() && groupAliases.contains(folded(id))) {
                 continue;
             }
-            if (isCaseInsensitive(id) && selectAliases.contains(folded(id)) && !columns.contains(render(id))) {
-                throw new InvalidQueryException(String.format(
-                        "HAVING and ORDER BY cannot refer to the SELECT alias '%s'; the aggregation "
-                                + "engine (PartiQL) does not support it. Repeat the expression instead, "
-                                + "for example ORDER BY SUM(amount) rather than ORDER BY total.",
-                        id.getName().getText()));
+            // PartiQL 1.x resolves SELECT aliases in HAVING and ORDER BY (0.14 could not, and
+            // this used to be rejected), so an alias reference needs no column fetched.
+            if (id.isRegular() && selectAliases.contains(folded(id)) && !columns.contains(render(id))) {
+                continue;
             }
             columns.add(render(id));
         }
 
         boolean aggregating = selectIds.aggregateCalls + lateIds.aggregateCalls > 0
-                || select.getGroup() != null
-                || select.getHaving() != null
-                || select.getOrder() != null
-                || select.getOffset() != null
-                || select.getSetq() instanceof PartiqlAst.SetQuantifier.Distinct;
-        boolean allColumns = select.getProject() instanceof PartiqlAst.Projection.ProjectStar;
+                || sfw.getGroupBy() != null
+                || sfw.getHaving() != null
+                || querySet.getOrderBy() != null
+                || isDistinct(select);
+        boolean allColumns = select instanceof SelectStar;
         return new Analysis(new ArrayList<>(columns), allColumns, aggregating);
     }
 
-    private static PartiqlAst.Expr.Select parseSelect(String aggregationBody) {
-        PartiqlAst.Statement statement;
-        try {
-            statement = PartiQLParserBuilder.standard().build().parseAstStatement(aggregationBody);
-        } catch (SqlException e) {
-            throw new InvalidQueryException("Could not parse the query: " + firstLine(e.getMessage()));
+    private static boolean isDistinct(Select select) {
+        SetQuantifier setq = null;
+        if (select instanceof SelectList) {
+            setq = ((SelectList) select).getSetq();
+        } else if (select instanceof SelectStar) {
+            setq = ((SelectStar) select).getSetq();
+        } else if (select instanceof SelectValue) {
+            setq = ((SelectValue) select).getSetq();
         }
-        if (statement instanceof PartiqlAst.Statement.Query) {
-            PartiqlAst.Expr expr = ((PartiqlAst.Statement.Query) statement).getExpr();
-            if (expr instanceof PartiqlAst.Expr.Select) {
-                return (PartiqlAst.Expr.Select) expr;
+        return setq != null && setq.code() == SetQuantifier.DISTINCT;
+    }
+
+    private static ExprQuerySet parseQuerySet(String aggregationBody) {
+        List<Statement> statements;
+        try {
+            statements = PartiQLParser.standard().parse(aggregationBody).statements;
+        } catch (PRuntimeException e) {
+            throw new InvalidQueryException("Could not parse the query: " + PartiQLErrors.describe(e.getError()));
+        }
+        if (statements.size() == 1 && statements.get(0) instanceof Query) {
+            Expr expr = ((Query) statements.get(0)).getExpr();
+            if (expr instanceof ExprQuerySet) {
+                return (ExprQuerySet) expr;
             }
         }
         throw new InvalidQueryException("Only SELECT statements are accepted; this proxy is read-only.");
     }
 
-    private static boolean isCaseInsensitive(PartiqlAst.Expr.Id id) {
-        return !(id.getCase() instanceof PartiqlAst.CaseSensitivity.CaseSensitive);
+    private static String folded(Identifier.Simple id) {
+        return id.getText().toLowerCase(Locale.ROOT);
     }
 
-    private static String folded(PartiqlAst.Expr.Id id) {
-        return id.getName().getText().toLowerCase(Locale.ROOT);
-    }
-
-    private static void addSymbol(Set<String> target, SymbolPrimitive symbol) {
+    private static void addSymbol(Set<String> target, Identifier.Simple symbol) {
         if (symbol != null) {
             target.add(symbol.getText().toLowerCase(Locale.ROOT));
         }
     }
 
     /**
-     * Renders a column for the push-down projection. Unquoted names are passed as the caller
-     * spelled them; quoted names, and names that are not plain identifiers, are re-quoted.
+     * Renders a column for the push-down projection. Regular (case-insensitive) names are passed
+     * as the caller spelled them; delimited names, and names that are not plain identifiers, are
+     * re-quoted.
      */
-    private static String render(PartiqlAst.Expr.Id id) {
-        String name = id.getName().getText();
-        if (isCaseInsensitive(id) && SIMPLE_IDENTIFIER.matcher(name).matches()) {
+    private static String render(Identifier.Simple id) {
+        String name = id.getText();
+        if (id.isRegular() && SIMPLE_IDENTIFIER.matcher(name).matches()) {
             return name;
         }
         return '"' + name.replace("\"", "\"\"") + '"';
-    }
-
-    private static String firstLine(String message) {
-        if (message == null) {
-            return "syntax error";
-        }
-        int newline = message.indexOf('\n');
-        return (newline < 0 ? message : message.substring(0, newline)).trim();
     }
 }

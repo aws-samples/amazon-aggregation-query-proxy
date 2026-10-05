@@ -13,9 +13,10 @@ and Amazon Keyspaces/DynamoDB.
 It provides intermediate aggregation logic which allows existing application to execute 
 aggregation queries against Amazon DynamoDB/Keyspaces.
 
-The AQP converts the provided aggregation query (SQL-92) to a plain request (CQL/DDBPartiQL).
-After the plain response (json) has been received the AQP uses IonEngine to aggregate the plain response into 
-the final result set in json format.
+The AQP splits each aggregation query in two: a plain projection pushed down to the data
+store (CQL for Keyspaces, PartiQL for DynamoDB), and the aggregation itself, evaluated over the
+returned rows by the [PartiQL](https://partiql.org/) engine inside the proxy. See
+"How a query is split" below.
  
 ![alt text](diagram.png)
 
@@ -47,6 +48,9 @@ users:
     secret: ${AQP_BATCH_APP_SECRET}
     roles: [LARGE_QUERY]
 ```
+
+Roles are reserved for future per-role query budgets and are not yet enforced: every
+configured client may run any accepted query.
 
 In production, supply the variables from AWS Secrets Manager (for example through ECS task
 definition `secrets`) rather than plain environment configuration. The former single
@@ -94,7 +98,7 @@ Send the query in a `POST` body:
 
 ```
 curl -u reporting-app:$AQP_REPORTING_APP_SECRET -H 'Content-Type: application/json' \
-  -d '{"query": "SELECT award, COUNT(book_title) AS books FROM keyspaces_sample.keyspaces_sample_table GROUP BY award"}' \
+  -d '{"query": "SELECT award, COUNT(book_title) AS books, AVG(rank) AS avg_rank FROM keyspaces_sample.keyspaces_sample_table GROUP BY award"}' \
   http://localhost:8080/query-aggregation
 ```
 
@@ -146,8 +150,7 @@ A query that references no column, such as `SELECT COUNT(*) ...`, reads only the
 rather than whole rows.
 
 Not supported, each rejected with `400` and a message saying why: joins, table aliases,
-subqueries, set operations (`UNION` etc.), comments (`--`, `/* */` and CQL `//`), and `ORDER BY`/`HAVING` that refer to a
-`SELECT` alias (a PartiQL 0.7 limitation — repeat the expression, e.g. `ORDER BY SUM(amount)`).
+subqueries, set operations (`UNION` etc.), comments (`--`, `/* */` and CQL `//`).
 
 ### Accepted statements
 The proxy is read-only. Only a single `SELECT` statement is accepted; anything else — including
@@ -161,37 +164,42 @@ as well (for example `dynamodb:PartiQLSelect` without the write actions).
 | `400` | Statement is not a single read-only SELECT, uses an unsupported shape, could not be evaluated by the aggregation step, or was rejected by the data store |
 | `401` | Missing or invalid credentials |
 | `404` | Table does not exist |
+| `422` | POST body is missing the `query` field, or it is blank or oversized |
 | `413` | Result set exceeded `maxRows` or `maxResultBytes` |
 | `429` | Table or account throughput exceeded; retry with exponential back-off |
 | `502` | The data store could not serve the query, including the proxy's own credential or permission failures (details are logged server-side, never returned) |
 | `504` | The data store did not return a complete result set in time |
 
 ### Example: Amazon Keyspaces
+Sample data: three awards, three books each, ranks 1-3.
 
 ```
 curl -u reporting-app:$AQP_REPORTING_APP_SECRET -H 'Content-Type: application/json' \
-  -d '{"query": "select count(book_title) as books, award, avg(rank) as avg_rang from keyspaces_sample.keyspaces_sample_table GROUP BY award"}' \
+  -d '{"query": "select count(book_title) as books, award, avg(rank) as avg_rank from keyspaces_sample.keyspaces_sample_table GROUP BY award"}' \
   http://localhost:8080/query-aggregation
 ```
 
-`HTTP/1.1 200 OK`
-`Cache-Control: no-transform, max-age=60, private`
-`Content-Encoding: gzip`
-`Content-Length: 195`
-`Content-Type: application/json`
-`Date: Wed, 04 May 2022 01:59:16 GMT`
-`Vary: Accept-Encoding`
+Output (captured from a real run; POST responses are not cached):
 
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-Request-Id: e3bb9d06-f1bd-4e84-badf-146b961f622a
+Content-Encoding: gzip
+```
 ```json
 {
-    "response": [{"resultSet":[{"books":3,"award":"Kwesi Manu Prize","avg_rang":2e0},
-                                 {"books":3,"award":"Richard Roe","avg_rang":2e0},
-                                 {"books":3,"award":"Wolf","avg_rang":2e0}]}],
     "stats": {
-        "elapsedTimeToAggregateDataInMs": 361,
-        "elapsedTimeToRetrieveDataInMs": 120,
-        "payloadSizeBytes": 626
-    }
+        "elapsedTimeToRetrieveDataInMs": 13,
+        "elapsedTimeToAggregateDataInMs": 71,
+        "payloadSizeBytes": 525,
+        "rowsRetrieved": 9
+    },
+    "response": [{"resultSet": [
+        {"books": 3, "award": "Kwesi Manu Prize", "avg_rank": 2},
+        {"books": 3, "award": "Richard Roe", "avg_rank": 2},
+        {"books": 3, "award": "Wolf", "avg_rank": 2}
+    ]}]
 }
 ```
 
@@ -203,38 +211,28 @@ curl -u reporting-app:$AQP_REPORTING_APP_SECRET -H 'Content-Type: application/js
   http://localhost:8080/query-aggregation
 ```
 
-`HTTP/1.1 200 OK`
-`Cache-Control: no-transform, max-age=60, private`
-`Content-Encoding: gzip`
-`Content-Length: 229`
-`Content-Type: application/json`
-`Date: Tue, 14 Jun 2022 14:57:15 GMT`
-`Vary: Accept-Encoding`
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-Request-Id: f275876c-fd3a-4ec6-a048-e435ea2e0e61
+Content-Encoding: gzip
+```
 ```json
 {
-    "response": [
-        {
-            "resultSet": [
-                {
-                    "pk": "ACCOUNT#ACCOUNT1#CUSTOMER#CUSTOMER61",
-                    "total": 133.9894140356888,
-                    "zipcode": 74545
-                },
-                {
-                    "pk": "ACCOUNT#ACCOUNT40#CUSTOMER#CUSTOMER33",
-                    "total": 4321.055836431855,
-                    "zipcode": 56624
-                }
-            ]
-        }
-    ],
     "stats": {
-        "elapsedTimeToAggregateDataInMs": 1210,
-        "elapsedTimeToRetrieveDataInMs": 1346,
-        "payloadSizeBytes": 194
-    }
+        "elapsedTimeToRetrieveDataInMs": 34,
+        "elapsedTimeToAggregateDataInMs": 46,
+        "payloadSizeBytes": 230,
+        "rowsRetrieved": 3
+    },
+    "response": [{"resultSet": [
+        {"zipcode": 74545, "pk": "ACCOUNT#ACCOUNT1#CUSTOMER#CUSTOMER61", "total": 134},
+        {"zipcode": 56624, "pk": "ACCOUNT#ACCOUNT40#CUSTOMER#CUSTOMER33", "total": 4321.1}
+    ]}]
 }
 ```
+
+On real DynamoDB the `stats` also include `consumedReadCapacityUnits`.
 
 ### Observability
 * **Request ids.** Every response carries `X-Request-Id`, and every log line written while
