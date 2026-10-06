@@ -15,7 +15,7 @@ COPY query-app/ query-app/
 RUN mvn -B -q package && cp query-app/target/query-app-*.jar /src/app.jar
 
 # ---- Runtime stage: headless JRE only, no build tools or sources.
-FROM amazoncorretto:21.0.12-al2023-headless@sha256:26f4ff28f9214a2b32a99e824d9375f5669bfa47d3a1f0b07b3afb60de9c0281
+FROM amazoncorretto:26.0.1-al2023-headless@sha256:3bc31df9c6bf4fadda659784c6c3cee683b4f6c016f6177c58ce0dcb143bd7e6
 WORKDIR /usr/app
 
 COPY --from=build /src/app.jar ./app.jar
