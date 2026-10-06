@@ -173,6 +173,11 @@ aws elbv2 create-load-balancer --name aqp-alb --scheme internal --type applicati
   --subnets $PRIVATE_SUBNETS --security-groups <alb-sg>
 ```
 
+Raise the ALB **idle timeout above the query budget** (`aws elbv2 modify-load-balancer-attributes
+... --attributes Key=idle_timeout.timeout_seconds,Value=120`): the default 60 s is below
+`AQP_QUERY_TIMEOUT_SECONDS=90`, so the ALB would return 504 and sever a long-running
+aggregation the service itself still considers within budget.
+
 TLS is still mandatory on an internal ALB: the client secrets are bearer tokens, and "inside
 the VPC" is not a trust boundary. Use an ACM certificate for the private DNS name clients will
 call (public ACM with DNS validation works for internal ALBs; ACM Private CA if you have one).
@@ -193,7 +198,13 @@ Use [`deploy/ecs/task-definition.json`](../deploy/ecs/task-definition.json) and 
 * `readonlyRootFilesystem: true` with a single writable **`/tmp` volume** — verified: the
   PartiQL engine runs this way as-is; the **DuckDB engine additionally needs `/tmp` to allow
   `exec`** (its JDBC driver extracts a native library there), which a Fargate ephemeral-storage
-  volume permits. Do not mount `/tmp` `noexec` with `DUCKDB`.
+  volume permits. Do not mount `/tmp` `noexec` with `DUCKDB`. One more Fargate wrinkle,
+  verified the hard way: the ephemeral volume is mounted **root-owned `0755`**, so the
+  non-root app (uid 10001) cannot write to it and DuckDB crashes at startup with
+  `AccessDeniedException: /tmp/libduckdb_java*.so`. The task definition therefore runs a tiny
+  root `tmp-init` sidecar (`chmod 1777 /tmp`, `essential: false`) that the app container
+  `dependsOn` with `condition: SUCCESS`. Its image must be pullable from inside the VPC — in
+  an endpoints-only network that means a copy in your private ECR, not Docker Hub.
 * `AQP_QUERY_TIMEOUT_SECONDS=90`: bounds the data-store read of one query, in both DynamoDB
   and Keyspaces modes. Fargate caps `stopTimeout` at 120 s, so a budget above it means
   deployments cut in-flight queries; 90 s leaves headroom for the (fast) aggregation phase.

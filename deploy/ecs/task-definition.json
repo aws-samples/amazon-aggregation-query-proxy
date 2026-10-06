@@ -80,6 +80,37 @@
           "awslogs-region": "<REGION>",
           "awslogs-stream-prefix": "aqp"
         }
+      },
+      "dependsOn": [
+        {
+          "containerName": "tmp-init",
+          "condition": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "name": "tmp-init",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/<any small image with chmod, e.g. a private copy of amazonlinux:2023>",
+      "essential": false,
+      "command": [
+        "sh",
+        "-c",
+        "chmod 1777 /tmp"
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "tmp",
+          "containerPath": "/tmp",
+          "readOnly": false
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/aggregation-query-proxy",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "aqp"
+        }
       }
     }
   ],
