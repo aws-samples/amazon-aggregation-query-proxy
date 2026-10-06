@@ -434,6 +434,9 @@ class QueryDDBTest {
             resourceTimer |= it.next().startsWith("com.aws.aqp.api.QueryRESTController.");
         }
         assertTrue(resourceTimer, "no @Timed metric for the resource");
+        assertEquals("PARTIQL",
+                root.get("gauges").get("com.aws.aqp.core.Aggregator.engine").get("value").asText(),
+                "the engine gauge must name the configured aggregation engine");
     }
 
     @Test

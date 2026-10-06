@@ -48,6 +48,8 @@ class ShippedConfigurationTest {
         assertEquals("a-sufficiently-long-secret", config.getUsers().get("reporting-app").getSecret());
         assertNull(config.getClientSecret(), "legacy shared secret must not be configured");
         assertEquals("KEYSPACES", config.getServiceName());
+        assertEquals(com.aws.aqp.core.EngineType.PARTIQL, config.getAggregationEngine(),
+                "the shipped config must default to the PartiQL engine");
     }
 
     /** An unset secret variable must fail startup, not become the literal "${...}" secret. */

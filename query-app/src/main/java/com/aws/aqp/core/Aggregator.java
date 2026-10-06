@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class Aggregator {
 
     private final Extractor extractor;
+    private final AggregationEngine engine;
     private final ObjectMapper objectMapper;
     private static final QueryPlanner queryPlanner = new QueryPlanner();
     private static final Logger LOGGER = LoggerFactory.getLogger(Aggregator.class);
@@ -40,8 +41,9 @@ public class Aggregator {
     private final Histogram payloadBytes;
     private final Histogram consumedReadCapacityUnits;
 
-    public Aggregator(Extractor extractor, MetricRegistry metrics) {
+    public Aggregator(Extractor extractor, AggregationEngine engine, MetricRegistry metrics) {
         this.extractor = extractor;
+        this.engine = engine;
         // Reads decimals from the aggregation result as BigDecimal. By default Jackson reads them
         // as doubles, which rounds any value with more than about 16 significant digits;
         // DynamoDB numbers carry up to 38. (Large integers already become BigInteger.)
@@ -83,7 +85,7 @@ public class Aggregator {
         long aggregateNanos;
         try (Timer.Context ignored = aggregateTimer.time()) {
             long start = System.nanoTime();
-            aggregatedResult = new AggregationEngine().query(plan.aggregationQuery(), extracted.document());
+            aggregatedResult = engine.query(plan.aggregationQuery(), extracted.document());
             aggregateNanos = System.nanoTime() - start;
         }
 

@@ -4,6 +4,7 @@
 package com.aws.aqp.application;
 
 import com.aws.aqp.connectors.DatabaseType;
+import com.aws.aqp.core.EngineType;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.dropwizard.core.Configuration;
 
@@ -47,6 +48,13 @@ public class AppConfiguration extends Configuration {
     private Map<String, ClientCredentials> users = new LinkedHashMap<>();
 
     /**
+     * Engine evaluating the aggregation half of each query (SELECT list, GROUP BY, HAVING,
+     * ORDER BY) over the rows fetched from the data store.
+     */
+    @JsonProperty
+    private String aggregationEngine = "PARTIQL";
+
+    /**
      * Caps on the push-down result set. Aggregation happens in this node's heap, so without a
      * cap an unbounded query is an OOM. Enforced while pages are read, before the whole result
      * set is buffered.
@@ -86,6 +94,25 @@ public class AppConfiguration extends Configuration {
                     "Unknown serviceName '%s'; expected one of %s",
                     serviceName, Arrays.toString(DatabaseType.values())), e);
         }
+    }
+
+    /** Parses {@code aggregationEngine} case-insensitively, like {@link #getDatabaseType()}. */
+    public EngineType getAggregationEngine() {
+        if (aggregationEngine == null || aggregationEngine.isBlank()) {
+            throw new IllegalArgumentException(String.format(
+                    "aggregationEngine must be one of %s", Arrays.toString(EngineType.values())));
+        }
+        try {
+            return EngineType.valueOf(aggregationEngine.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(String.format(
+                    "Unknown aggregationEngine '%s'; expected one of %s",
+                    aggregationEngine, Arrays.toString(EngineType.values())), e);
+        }
+    }
+
+    public void setAggregationEngine(String aggregationEngine) {
+        this.aggregationEngine = aggregationEngine;
     }
 
     public String getPathToKeyspacesConfigFile() {

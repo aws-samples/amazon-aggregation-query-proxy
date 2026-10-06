@@ -3,7 +3,7 @@
 
 package com.aws.aqp.core.sql;
 
-import com.aws.aqp.core.AggregationEngine;
+import com.aws.aqp.core.PartiQLEngine;
 import com.aws.aqp.core.errors.InvalidQueryException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,7 +44,7 @@ class QueryPlannerTest {
     /** Runs the plan's aggregation half and output window, as Aggregator does. */
     private JsonNode aggregate(String query, String rowsJson) throws Exception {
         QueryPlan plan = planner.plan(query);
-        String result = new AggregationEngine().query(plan.aggregationQuery(), "{\"resultSet\":" + rowsJson + "}");
+        String result = new PartiQLEngine().query(plan.aggregationQuery(), "{\"resultSet\":" + rowsJson + "}");
         return plan.window((com.fasterxml.jackson.databind.node.ArrayNode) mapper.readTree(result));
     }
 
@@ -301,7 +301,7 @@ class QueryPlannerTest {
 
         @Test
         void evaluatesOverTheBoundRows() throws Exception {
-            String result = new AggregationEngine().query(
+            String result = new PartiQLEngine().query(
                     planner.plan("select count(pk) as CNT FROM t").aggregationQuery(),
                     "{\"resultSet\":[{\"pk\":\"a\"},{\"pk\":\"b\"}]}");
             assertEquals(2, mapper.readTree(result).get(0).get("CNT").asInt());

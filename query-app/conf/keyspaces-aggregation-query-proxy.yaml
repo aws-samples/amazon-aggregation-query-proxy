@@ -13,6 +13,10 @@ pathToKeyspacesConfigFile: ${AQP_KEYSPACES_CONFIG_DIR:-/usr/app}
 awsRegion: ${AWS_REGION:-us-east-1}
 localDDB: false
 
+# Engine evaluating the aggregation half of each query over the fetched rows.
+# Valid values: PARTIQL (default), DUCKDB.
+aggregationEngine: ${AQP_AGGREGATION_ENGINE:-PARTIQL}
+
 # Push-down result budget; see "Limitations" in the README.
 maxRows: 100000
 maxResultBytes: 67108864
