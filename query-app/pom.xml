@@ -23,6 +23,7 @@
         <partiql.version>1.6.1</partiql.version>
         <kotlin.version>1.9.20</kotlin.version>
         <unirest.version>3.14.5</unirest.version>
+        <duckdb.version>1.5.6.0</duckdb.version>
     </properties>
 
     <dependencyManagement>
@@ -215,6 +216,14 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- Optional aggregation engine (aggregationEngine: DUCKDB). The jar bundles native
+             libraries for linux amd64/arm64, macOS and windows (~81 MB); shade-time slimming of
+             unused platforms is tracked separately. -->
+        <dependency>
+            <groupId>org.duckdb</groupId>
+            <artifactId>duckdb_jdbc</artifactId>
+            <version>${duckdb.version}</version>
         </dependency>
         <!-- Used directly for ReflectionToStringBuilder. -->
         <dependency>

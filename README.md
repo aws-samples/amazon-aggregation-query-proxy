@@ -33,6 +33,7 @@ startup, and the application refuses to start if a referenced variable is not se
 | `AQP_SERVICE_NAME` | `KEYSPACES` | `KEYSPACES` or `DYNAMODB` |
 | `AWS_REGION` | `us-east-1` | Region of the Keyspaces or DynamoDB endpoint |
 | `AQP_KEYSPACES_CONFIG_DIR` | `/usr/app` | Directory containing `KeyspacesConnector.conf` |
+| `AQP_AGGREGATION_ENGINE` | `PARTIQL` | Aggregation engine: `PARTIQL` or `DUCKDB` (see "Aggregation engines") |
 | `AQP_REPORTING_APP_SECRET` | *(required)* | Secret of the `reporting-app` API client |
 
 #### API clients
@@ -136,8 +137,9 @@ The proxy splits each query in two:
   `begins_with(...)`, `token(...)`, CQL's `PER PARTITION LIMIT` and `ALLOW FILTERING` work.
   `<columns>` is every column referenced anywhere in the aggregation clauses — including
   `GROUP BY` keys that are not in the `SELECT` list.
-* **Aggregation**, run by PartiQL over those rows: the `SELECT` list, `GROUP BY`, `HAVING` and
-  `ORDER BY`. `OFFSET` and `LIMIT` are then applied to the result rows by the proxy.
+* **Aggregation**, run over those rows by the selected engine (see "Aggregation engines";
+  PartiQL by default): the `SELECT` list, `GROUP BY`, `HAVING` and `ORDER BY`. `OFFSET` and
+  `LIMIT` are then applied to the result rows by the proxy.
 
 `LIMIT` caps the result rows (for example the number of groups), so an aggregate still reads
 every matching row: `SELECT COUNT(*) ... LIMIT 1` counts all of them. The exception is a plain
@@ -152,6 +154,33 @@ rather than whole rows.
 Not supported, each rejected with `400` and a message saying why: joins, table aliases,
 subqueries, set operations (`UNION` etc.), comments (`--`, `/* */` and CQL `//`).
 
+### Aggregation engines
+The aggregation half of each query runs on a selectable engine; the push-down, API, budgets and
+response envelope are identical either way. Both engines pass the same contract and parity test
+suites: for the supported query shapes they return the same rows, with numbers exact to all 38
+DynamoDB digits, and both tolerate rows that lack a referenced attribute (schemaless items).
+
+| | `PARTIQL` (default) | `DUCKDB` |
+|---|---|---|
+| What it is | PartiQL, evaluated in-process on the JVM | DuckDB, an embedded columnar SQL engine, via JDBC |
+| Footprint | none beyond the proxy | ~81 MB of native libraries in the jar; a native crash can take the whole process down |
+| Memory | JVM heap, bounded by `maxRows`/`maxResultBytes` | its own ceiling, derived from `maxResultBytes`; exceeding it is a clean `413` |
+| When to choose | the safe default | aggregation-heavy workloads where columnar execution pays |
+
+Behaviour differences (each pinned by a test; everything not listed is identical):
+
+* A projected attribute missing from a row appears as `"x": null` on DuckDB; PartiQL omits the
+  field. Aggregates are unaffected — both skip the row.
+* `/` is SQL float division on DuckDB (`7/2 = 3.5`); PartiQL keeps integer semantics (`3`).
+* An unaliased aggregate is named `count(pk)` on DuckDB, `_1` on PartiQL. Alias your aggregates.
+* DuckDB identifiers are case-insensitive: rows carrying two attributes that differ only in
+  letter case (`amount` and `Amount`) are rejected with a `400`. PartiQL loads them.
+* An attribute whose values span more than 38 total digits across rows (for example `1E30` and
+  `1E-30` together) degrades to floating point on DuckDB, with a warning logged.
+
+When running the container with `DUCKDB`, remember DuckDB's memory is native, outside the JVM
+heap: on small containers lower `-XX:MaxRAMPercentage` so heap plus engine fit the limit.
+
 ### Accepted statements
 The proxy is read-only. Only a single `SELECT` statement is accepted; anything else — including
 `INSERT`, `UPDATE`, `DELETE`, `DROP`, or a second statement appended after a `;` — is rejected
@@ -165,7 +194,7 @@ as well (for example `dynamodb:PartiQLSelect` without the write actions).
 | `401` | Missing or invalid credentials |
 | `404` | Table does not exist |
 | `422` | POST body is missing the `query` field, or it is blank or oversized |
-| `413` | Result set exceeded `maxRows` or `maxResultBytes` |
+| `413` | Result set exceeded `maxRows` or `maxResultBytes`, or (DuckDB engine) the aggregation exceeded the engine memory ceiling |
 | `429` | Table or account throughput exceeded; retry with exponential back-off |
 | `502` | The data store could not serve the query, including the proxy's own credential or permission failures (details are logged server-side, never returned) |
 | `504` | The data store did not return a complete result set in time |
@@ -251,6 +280,7 @@ On real DynamoDB the `stats` also include `consumedReadCapacityUnits`.
   | `com.aws.aqp.core.Aggregator.retrieve` / `.aggregate` | time in the data store / in aggregation |
   | `com.aws.aqp.core.Aggregator.rows` / `.payloadBytes` | size of each push-down result |
   | `com.aws.aqp.core.Aggregator.consumedReadCapacityUnits` | DynamoDB RCUs per query, in hundredths |
+  | `com.aws.aqp.core.Aggregator.engine` | gauge naming the configured aggregation engine |
 
   `rows` and `payloadBytes` approaching `maxRows` / `maxResultBytes` is the early warning for
   queries that will soon be rejected with `413`.
@@ -263,6 +293,7 @@ skipped, not failed, when they are not reachable:
 |---|---|
 | `QueryDDBTest` | DynamoDB Local on `localhost:8000` |
 | `QueryCassandraTest` | Apache Cassandra on `127.0.0.1:9042`, standing in for Amazon Keyspaces (same CQL protocol; SigV4 and TLS are not exercised) |
+| `QueryDDBDuckDbTest` | DynamoDB Local on `localhost:8000`, with the app running the `DUCKDB` engine |
 
 Start both with:
 

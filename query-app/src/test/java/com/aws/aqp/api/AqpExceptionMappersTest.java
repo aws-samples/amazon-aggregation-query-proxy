@@ -94,6 +94,18 @@ class AqpExceptionMappersTest {
         assertTrue(body(response).contains("data filtering"), () -> body(response));
     }
 
+    /** The PartiQL engine's failures carry structured PErrors; the body must stay readable. */
+    @Test
+    void reportsPartiQLEvaluationFailuresAs400WithTheErrorCode() {
+        org.partiql.spi.errors.PRuntimeException real = org.junit.jupiter.api.Assertions.assertThrows(
+                org.partiql.spi.errors.PRuntimeException.class,
+                () -> org.partiql.parser.PartiQLParser.standard().parse("SELECT x FROM"));
+        Response response = new AqpExceptionMappers.Aggregation().toResponse(real);
+        assertEquals(400, response.getStatus());
+        assertTrue(body(response).contains("could not evaluate"), () -> body(response));
+        assertTrue(body(response).matches(".*[A-Z_]{4,}.*"), () -> "no error code in: " + body(response));
+    }
+
     /** SDK client-side failures are not DynamoDbExceptions and previously had no mapper at all. */
     @Test
     void reportsSdkTimeoutsAs504() {

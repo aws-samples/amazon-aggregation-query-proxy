@@ -32,7 +32,9 @@ EXPOSE 8080
 
 # Without these the JVM sizes its heap from the host's memory rather than the container limit
 # and is OOM-killed under load. Aggregation happens on-heap, so leave it most of the limit.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+# --enable-native-access: the optional DuckDB engine loads a native library; without the flag
+# newer JDKs warn today and will refuse tomorrow.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError --enable-native-access=ALL-UNNAMED"
 
 # The admin connector listens on loopback only; probe it from inside the container. Uses bash's
 # /dev/tcp so the image needs no curl.

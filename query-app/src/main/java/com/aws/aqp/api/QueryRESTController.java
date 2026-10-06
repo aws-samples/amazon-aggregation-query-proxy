@@ -5,6 +5,7 @@ package com.aws.aqp.api;
 
 import com.aws.aqp.auth.AqpUser;
 import com.aws.aqp.connectors.Extractor;
+import com.aws.aqp.core.AggregationEngine;
 import com.aws.aqp.core.Aggregator;
 import com.aws.aqp.core.Response;
 import com.aws.aqp.core.StatementGuard;
@@ -34,8 +35,8 @@ public class QueryRESTController {
     private final static int MAX_AGED_CACHE = 1;
     private final Aggregator aggregator;
 
-    public QueryRESTController(Extractor extractor, MetricRegistry metrics) {
-        this.aggregator = new Aggregator(extractor, metrics);
+    public QueryRESTController(Extractor extractor, AggregationEngine engine, MetricRegistry metrics) {
+        this.aggregator = new Aggregator(extractor, engine, metrics);
     }
 
     /**
