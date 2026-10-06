@@ -7,7 +7,7 @@ authentication, so TLS at the edge, least-privilege IAM, private networking and 
 container are not optional extras.
 
 ```
-clients ──HTTPS (ACM cert, WAF rate rule)──> ALB ──HTTP :8080──> Fargate task (private subnet)
+clients ──HTTPS (ACM cert)──> internal ALB ──HTTP :8080──> Fargate task (private subnet)
                                                                    │ task role: read-only data access
                                                                    ├──VPC endpoint──> DynamoDB / Keyspaces
                                                                    └──VPC endpoint──> Secrets Manager, ECR, Logs
@@ -32,11 +32,15 @@ export AWS_ACCOUNT_ID=<your account id>
 export AWS_REGION=<region>
 export VPC_ID=<vpc with at least two private subnets>
 export PRIVATE_SUBNETS="subnet-aaa subnet-bbb"   # two AZs minimum
-export PUBLIC_SUBNETS="subnet-ccc subnet-ddd"    # for the ALB
 ```
 
 You need: a VPC with private subnets, an ACM certificate for the DNS name clients will call,
 and the data store (a DynamoDB table, or an Amazon Keyspaces keyspace) in the same region.
+
+This runbook assumes the common case: the proxy is **internal**, called only by your own
+applications, so everything — ALB included — lives in private subnets and the VPC needs no
+internet gateway, NAT, or public subnets at all. If clients genuinely come from the internet,
+see the internet-facing variant in section 6.
 
 ## 2. Build and push the image
 
@@ -150,13 +154,13 @@ Security groups — admit only what must talk, in both directions:
 
 | SG | Inbound | Outbound |
 |---|---|---|
-| `alb-sg` | 443 from your clients' CIDR (or 0.0.0.0/0 if public) | 8080 to `task-sg` |
+| `alb-sg` | 443 from your internal clients' SGs/CIDRs only (0.0.0.0/0 solely for the internet-facing variant) | 8080 to `task-sg` |
 | `task-sg` | 8080 from `alb-sg` only | 443 to the endpoint SG / DynamoDB prefix list; 9142 to the Cassandra endpoint (Keyspaces mode) |
 
 Nothing opens 8081 anywhere: the admin port binds loopback inside the task and is unreachable
 by design.
 
-## 6. ALB, TLS and WAF
+## 6. ALB and TLS
 
 ```bash
 # Target group: health-check the unauthenticated liveness endpoint
@@ -164,13 +168,22 @@ aws elbv2 create-target-group --name aqp-tg --protocol HTTP --port 8080 \
   --vpc-id $VPC_ID --target-type ip \
   --health-check-path /ping --health-check-interval-seconds 15 \
   --healthy-threshold-count 2 --unhealthy-threshold-count 3
-# ALB in the public subnets, HTTPS listener with your ACM certificate,
-# and (recommended) redirect/refuse plain HTTP entirely.
+# Internal ALB in the PRIVATE subnets; HTTPS listener only, no plain-HTTP listener.
+aws elbv2 create-load-balancer --name aqp-alb --scheme internal --type application \
+  --subnets $PRIVATE_SUBNETS --security-groups <alb-sg>
 ```
 
-Attach a WAF web ACL with a **rate-based rule** (e.g. 500 requests / 5 min per IP) — the
-proxy's own protections bound a query's cost, WAF bounds the request rate. Prefer `POST`
-clients: the `GET` forms put query text (often customer identifiers) into ALB access logs.
+TLS is still mandatory on an internal ALB: the client secrets are bearer tokens, and "inside
+the VPC" is not a trust boundary. Use an ACM certificate for the private DNS name clients will
+call (public ACM with DNS validation works for internal ALBs; ACM Private CA if you have one).
+
+**Internet-facing variant** (only if clients really are outside your network): put the ALB in
+public subnets with `--scheme internet-facing`, open `alb-sg` inbound 443 to the client CIDRs,
+and attach a WAF web ACL with a **rate-based rule** (e.g. 500 requests / 5 min per IP) — the
+proxy bounds a query's cost, WAF bounds the request rate.
+
+Either way, prefer `POST` clients: the `GET` forms put query text (often customer identifiers)
+into ALB access logs.
 
 ## 7. Task definition
 
