@@ -67,6 +67,23 @@ public class AppConfiguration extends Configuration {
     @JsonProperty
     private long maxResultBytes = 64L * 1024 * 1024;
 
+    /**
+     * How long the data-store read of one query may take, across all pages, before the caller
+     * gets a 504. The aggregation phase runs after this and is additional (typically
+     * milliseconds). On ECS/Fargate keep it well under the task's stopTimeout (max 120 seconds
+     * there), or in-flight queries are cut mid-answer on every deployment.
+     */
+    @Min(1)
+    @JsonProperty
+    private long queryTimeoutSeconds = 360;
+
+    /**
+     * Optional table for the DynamoDB startup health check. When set, the probe is
+     * DescribeTable on this table, so the task role needs no account-wide ListTables.
+     */
+    @JsonProperty
+    private String dynamoHealthCheckTable;
+
     public String getServiceName() {
         return serviceName;
     }
@@ -142,6 +159,24 @@ public class AppConfiguration extends Configuration {
 
     public void setLocalDDB(Boolean localDDB) {
         this.localDDB = localDDB;
+    }
+
+    public long getQueryTimeoutSeconds() {
+        return queryTimeoutSeconds;
+    }
+
+    public void setQueryTimeoutSeconds(long queryTimeoutSeconds) {
+        this.queryTimeoutSeconds = queryTimeoutSeconds;
+    }
+
+    /** Blank means unset: an empty-string env default must behave like absence. */
+    public String getDynamoHealthCheckTable() {
+        return dynamoHealthCheckTable == null || dynamoHealthCheckTable.isBlank()
+                ? null : dynamoHealthCheckTable.trim();
+    }
+
+    public void setDynamoHealthCheckTable(String dynamoHealthCheckTable) {
+        this.dynamoHealthCheckTable = dynamoHealthCheckTable;
     }
 
     public String getClientSecret() {

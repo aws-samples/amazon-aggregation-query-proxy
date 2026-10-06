@@ -1,0 +1,91 @@
+{
+  "family": "aggregation-query-proxy",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "networkMode": "awsvpc",
+  "cpu": "1024",
+  "memory": "2048",
+  "runtimePlatform": {
+    "operatingSystemFamily": "LINUX",
+    "cpuArchitecture": "<X86_64 or ARM64 - must match the architecture the image was built for>"
+  },
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/aqp-execution-role",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/aqp-task-role",
+  "containerDefinitions": [
+    {
+      "name": "aggregation-query-proxy",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/simple-aggregation-query-app@sha256:<DIGEST>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "readonlyRootFilesystem": true,
+      "mountPoints": [
+        {
+          "sourceVolume": "tmp",
+          "containerPath": "/tmp",
+          "readOnly": false
+        }
+      ],
+      "ulimits": [
+        {
+          "name": "nofile",
+          "softLimit": 65536,
+          "hardLimit": 65536
+        }
+      ],
+      "environment": [
+        {
+          "name": "AQP_SERVICE_NAME",
+          "value": "DYNAMODB"
+        },
+        {
+          "name": "AQP_AGGREGATION_ENGINE",
+          "value": "PARTIQL"
+        },
+        {
+          "name": "AQP_QUERY_TIMEOUT_SECONDS",
+          "value": "90"
+        },
+        {
+          "name": "AQP_DDB_HEALTHCHECK_TABLE",
+          "value": "<YOUR_TABLE>"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "AQP_REPORTING_APP_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:aqp/reporting-app-<SUFFIX>"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /ping HTTP/1.0\\r\\n\\r\\n\" >&3 && head -n1 <&3 | grep -q \" 200 \"'"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "stopTimeout": 120,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/aggregation-query-proxy",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "aqp"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "tmp"
+    }
+  ]
+}

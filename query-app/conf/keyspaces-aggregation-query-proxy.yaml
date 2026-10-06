@@ -21,6 +21,15 @@ aggregationEngine: ${AQP_AGGREGATION_ENGINE:-PARTIQL}
 maxRows: 100000
 maxResultBytes: 67108864
 
+# Time budget for one query's data-store read (all pages) before a 504; aggregation time is
+# additional. On ECS/Fargate keep this well under the task's stopTimeout (120s max there) so
+# deployments don't cut in-flight queries.
+queryTimeoutSeconds: ${AQP_QUERY_TIMEOUT_SECONDS:-360}
+
+# DynamoDB only, optional: health-check this table with DescribeTable instead of the
+# account-wide ListTables, so the task role can be scoped to specific tables.
+dynamoHealthCheckTable: ${AQP_DDB_HEALTHCHECK_TABLE:-}
+
 # One entry per API client, each with its own secret (16+ characters) and roles.
 users:
   reporting-app:

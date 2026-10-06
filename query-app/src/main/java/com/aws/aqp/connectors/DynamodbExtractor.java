@@ -5,6 +5,7 @@ package com.aws.aqp.connectors;
 
 import com.aws.aqp.application.AppConfiguration;
 import com.aws.aqp.core.JsonHelper;
+import com.aws.aqp.core.errors.QueryTimeoutException;
 import com.aws.aqp.core.errors.ResultTooLargeException;
 import com.aws.aqp.core.sql.Dialect;
 import com.aws.aqp.core.sql.QueryPlan;
@@ -33,6 +34,7 @@ public class DynamodbExtractor extends Extractor {
     private final DynamoDbClient dynamoDbClient;
     private final long maxRows;
     private final long maxResultBytes;
+    private final long queryTimeoutSeconds;
     /**
      * Hash key attribute per table, or empty if it could not be described (for example no
      * dynamodb:DescribeTable permission). A table's key schema cannot change, so entries never
@@ -46,6 +48,7 @@ public class DynamodbExtractor extends Extractor {
         this.dynamoDbClient = dynamoDbClient;
         this.maxRows = appConfiguration.getMaxRows();
         this.maxResultBytes = appConfiguration.getMaxResultBytes();
+        this.queryTimeoutSeconds = appConfiguration.getQueryTimeoutSeconds();
     }
 
     /**
@@ -77,12 +80,21 @@ public class DynamodbExtractor extends Extractor {
         double consumedCapacity = 0;
         boolean capacityReported = false;
 
+        // The read budget spans all pages: each ExecuteStatement call is individually capped by
+        // the SDK, but the number of pages is not, so without this a large scan could run for
+        // minutes - past any deployment stopTimeout - with no 504 ever produced.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(queryTimeoutSeconds);
+
         // DynamoDB caps a page at 1 MB. Reading one page and aggregating it was reported as a
         // complete answer, so any larger result set produced a silently wrong aggregate.
         // Exceptions are no longer swallowed here: they propagate to the ExceptionMapper, which
         // turns them into a meaningful status instead of the NullPointerException that used to
         // follow from dereferencing a null response.
         do {
+            if (System.nanoTime() > deadline) {
+                throw new QueryTimeoutException(String.format(
+                        "DynamoDB did not return a complete result set within %d seconds.", queryTimeoutSeconds));
+            }
             ExecuteStatementRequest request = ExecuteStatementRequest.builder()
                     .statement(statement)
                     .nextToken(nextToken)

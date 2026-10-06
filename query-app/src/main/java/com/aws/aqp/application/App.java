@@ -4,6 +4,7 @@
 package com.aws.aqp.application;
 
 import com.aws.aqp.api.AqpExceptionMappers;
+import com.aws.aqp.api.PingResource;
 import com.aws.aqp.api.QueryRESTController;
 import com.aws.aqp.api.RequestIdFilter;
 import com.aws.aqp.auth.AqpAuthenticator;
@@ -100,6 +101,8 @@ public class App extends Application<AppConfiguration> {
         environment.metrics().register(MetricRegistry.name(Aggregator.class, "engine"),
                 (Gauge<String>) () -> appConfiguration.getAggregationEngine().name());
         environment.jersey().register(new QueryRESTController(extractor, engine, environment.metrics()));
+        // Unauthenticated liveness probe for load-balancer target health checks (ECS/Fargate).
+        environment.jersey().register(new PingResource());
     }
 
     /** The configured aggregation engine. Fails startup on an unknown name (see EngineType). */
@@ -151,7 +154,8 @@ public class App extends Application<AppConfiguration> {
             case DYNAMODB:
                 DynamoDbClient client = new ConnectionDDBFactory(appConfiguration).build();
                 environment.lifecycle().manage(new AutoCloseableManager(client));
-                registerAndRequireHealthy(environment, DYNAMODB_HEALTH_CHECK, new DynamoDbHealthCheck(client));
+                registerAndRequireHealthy(environment, DYNAMODB_HEALTH_CHECK,
+                        new DynamoDbHealthCheck(client, appConfiguration.getDynamoHealthCheckTable()));
                 return new DynamodbExtractor(appConfiguration, client);
 
             default:
