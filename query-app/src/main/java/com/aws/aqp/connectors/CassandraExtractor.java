@@ -44,7 +44,7 @@ public class CassandraExtractor extends Extractor {
     private final CqlSession cqlSession;
     private final long maxRows;
     private final long maxResultBytes;
-    private static final long TIMEOUT = 360;
+    private final long queryTimeoutSeconds;
     /** Exact decimals: row values are re-serialized when keys are unquoted, and must not round. */
     private static final ObjectMapper JSON = new ObjectMapper()
             .enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
@@ -54,6 +54,7 @@ public class CassandraExtractor extends Extractor {
         this.cqlSession = cqlSession;
         this.maxRows = appConfiguration.getMaxRows();
         this.maxResultBytes = appConfiguration.getMaxResultBytes();
+        this.queryTimeoutSeconds = appConfiguration.getQueryTimeoutSeconds();
     }
 
     /**
@@ -249,7 +250,7 @@ public class CassandraExtractor extends Extractor {
         // as a complete result. Partial data must be an error, not a silent wrong answer.
         boolean completed;
         try {
-            completed = collector.done.await(TIMEOUT, TimeUnit.SECONDS);
+            completed = collector.done.await(queryTimeoutSeconds, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             collector.cancel();
             throw e;
@@ -259,7 +260,7 @@ public class CassandraExtractor extends Extractor {
             // answered, and clients retrying on 504 stacked up abandoned scans.
             collector.cancel();
             throw new QueryTimeoutException(String.format(
-                    "Amazon Keyspaces did not return a complete result set within %d seconds.", TIMEOUT));
+                    "Amazon Keyspaces did not return a complete result set within %d seconds.", queryTimeoutSeconds));
         }
         collector.rethrowIfFailed();
 

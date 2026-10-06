@@ -59,6 +59,22 @@ jobs:
             if grep -q 'skipped="[1-9]' "$report"; then echo "::error::$suite was skipped"; exit 1; fi
           done
 
+  locust-harness:
+    name: Load-test harness stays runnable
+    # The previous harness rotted invisibly for years (it targeted an API removed in Locust
+    # 1.0). This proves the locustfile imports and its tasks register under the pinned version.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate locustfile and seeder
+        working-directory: query-app/src/test/locust/ddb
+        run: |
+          pip3 install -q -r requirements.txt
+          AQP_SECRET=ci-smoke locust -f performance_test_aqp.py --list
+          python3 seed_table.py --help > /dev/null
+          python3 seed_table.py --rows-per-partition 100 --print-expected
+
   image:
     name: Build container image
     runs-on: ubuntu-latest

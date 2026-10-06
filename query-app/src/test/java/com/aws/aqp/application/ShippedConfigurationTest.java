@@ -50,6 +50,9 @@ class ShippedConfigurationTest {
         assertEquals("KEYSPACES", config.getServiceName());
         assertEquals(com.aws.aqp.core.EngineType.PARTIQL, config.getAggregationEngine(),
                 "the shipped config must default to the PartiQL engine");
+        assertEquals(360, config.getQueryTimeoutSeconds());
+        assertNull(config.getDynamoHealthCheckTable(),
+                "a blank env default must behave like an unset health-check table");
     }
 
     /** An unset secret variable must fail startup, not become the literal "${...}" secret. */

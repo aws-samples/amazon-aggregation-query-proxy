@@ -175,6 +175,31 @@ class DynamodbExtractorTest {
         assertNull(run(config(1000), List.of(page(2, null, null))).consumedReadCapacityUnits());
     }
 
+    /**
+     * The read budget spans all pages. Without the deadline the pagination loop had no total
+     * time bound, so AQP_QUERY_TIMEOUT_SECONDS was a no-op in DynamoDB mode and a slow
+     * multi-page scan could outlive any deployment stopTimeout with no 504.
+     */
+    @Test
+    void stopsPagingWhenTheReadBudgetIsExhausted() {
+        AppConfiguration config = config(1_000_000);
+        config.setQueryTimeoutSeconds(1);
+        DynamoDbClient slow = (DynamoDbClient) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{DynamoDbClient.class}, (proxy, method, args) -> {
+                    if ("executeStatement".equals(method.getName())) {
+                        requests.add((ExecuteStatementRequest) args[0]);
+                        Thread.sleep(1200); // one slow page eats the whole budget
+                        return page(3, "next-token", 1.0);
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+
+        assertThrows(com.aws.aqp.core.errors.QueryTimeoutException.class,
+                () -> new DynamodbExtractor(config, slow)
+                        .execute(new QueryPlanner().plan("select sum(amount) as t FROM t")));
+        assertEquals(1, requests.size(), "requested another page after the budget was exhausted");
+    }
+
     /** The budget is enforced while paging, before later pages are requested. */
     @Test
     void stopsPagingOnceTheRowBudgetIsExceeded() {

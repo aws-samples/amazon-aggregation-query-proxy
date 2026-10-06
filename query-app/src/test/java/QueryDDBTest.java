@@ -439,6 +439,20 @@ class QueryDDBTest {
                 "the engine gauge must name the configured aggregation engine");
     }
 
+    /**
+     * The ALB target health check (ECS/Fargate) can only reach the application port, where
+     * everything else requires credentials; /ping must answer without them, cheaply, uncached.
+     */
+    @Test
+    void pingAnswersWithoutCredentials() throws JsonProcessingException {
+        HttpResponse<String> response = Unirest
+                .get(String.format("http://localhost:%d/ping", EXT.getLocalPort()))
+                .asString();
+        assertEquals(200, response.getStatus(), response::getBody);
+        assertEquals("ok", MAPPER.readTree(response.getBody()).get("status").asText());
+        assertEquals("no-store", response.getHeaders().getFirst("Cache-Control"));
+    }
+
     @Test
     void requiresAuthentication() {
         HttpResponse<String> response = Unirest

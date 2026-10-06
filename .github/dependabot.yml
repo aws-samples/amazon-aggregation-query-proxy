@@ -16,6 +16,10 @@ updates:
     directory: /build-script
     schedule:
       interval: weekly
+  - package-ecosystem: pip
+    directory: /query-app/src/test/locust/ddb
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -94,6 +94,13 @@ way (`--env AWS_ACCESS_KEY_ID ...` or a mounted `~/.aws`).
 The admin port (8081: health checks, metrics, thread dumps, log-level tasks) has no
 authentication and listens on 127.0.0.1 only. Do not publish it.
 
+### Deploy on ECS Fargate
+A security-first runbook — TLS at the ALB, least-privilege task IAM, private subnets with VPC
+endpoints, read-only root filesystem, secrets injected from Secrets Manager — is in
+[`docs/ecs-fargate.md`](docs/ecs-fargate.md), with a hardened task-definition template in
+[`deploy/ecs/task-definition.json`](deploy/ecs/task-definition.json). The unauthenticated
+`GET /ping` endpoint exists for the load balancer's target health checks.
+
 ### Querying
 Send the query in a `POST` body:
 
