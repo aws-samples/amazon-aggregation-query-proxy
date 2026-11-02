@@ -14,7 +14,7 @@
         <maven.compiler.release>21</maven.compiler.release>
 
         <dropwizard.version>5.0.2</dropwizard.version>
-        <awssdk.version>2.57.0</awssdk.version>
+        <awssdk.version>2.57.4</awssdk.version>
         <!-- Stays on the com.datastax.oss coordinates, which the SigV4 plugin is built against.
              The same classes are also published as org.apache.cassandra:java-driver-core;
              having both on the classpath would be a duplicate-class conflict (banned below). -->
@@ -23,7 +23,7 @@
         <partiql.version>1.6.1</partiql.version>
         <kotlin.version>2.4.21</kotlin.version>
         <unirest.version>3.14.5</unirest.version>
-        <duckdb.version>1.5.6.0</duckdb.version>
+        <duckdb.version>2.0.0.0</duckdb.version>
     </properties>
 
     <dependencyManagement>
@@ -108,7 +108,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.6.0</version>
+                <version>3.6.1</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

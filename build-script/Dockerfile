@@ -5,7 +5,7 @@
 # digest together.
 
 # ---- Build stage: compiles and runs unit tests; integration tests skip without DynamoDB Local.
-FROM maven:3-amazoncorretto-25-al2023@sha256:cbe7e5baedf0b1fb0ad32d6e9d2610079d3c9c572faea31018084de7dd0b3553 AS build
+FROM maven:3-amazoncorretto-25-al2023@sha256:d7d573505beedea8e0de13c485973ea474994f9aa58f7158a966e829855c7363 AS build
 WORKDIR /src
 COPY pom.xml ./
 COPY query-app/pom.xml query-app/
@@ -15,7 +15,7 @@ COPY query-app/ query-app/
 RUN mvn -B -q package && cp query-app/target/query-app-*.jar /src/app.jar
 
 # ---- Runtime stage: headless JRE only, no build tools or sources.
-FROM amazoncorretto:27.0.0-al2023-headless@sha256:7e5cc61122f8f23993d5c091a01ee49f6f5331c56c1623904fe2cb35b54bff51
+FROM amazoncorretto:27.0.1-al2023-headless@sha256:07fb670591c31587d8e0a3c144819b1d1ac7b81c05af8d035a831b107aacec2d
 WORKDIR /usr/app
 
 COPY --from=build /src/app.jar ./app.jar
