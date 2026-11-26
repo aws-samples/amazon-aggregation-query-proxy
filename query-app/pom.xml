@@ -20,7 +20,7 @@
              having both on the classpath would be a duplicate-class conflict (banned below). -->
         <datastax.version>4.17.0</datastax.version>
         <sigv4-plugin.version>4.0.9</sigv4-plugin.version>
-        <partiql.version>1.6.1</partiql.version>
+        <partiql.version>1.7.0</partiql.version>
         <kotlin.version>2.4.21</kotlin.version>
         <unirest.version>3.14.5</unirest.version>
         <duckdb.version>2.0.0.1</duckdb.version>
